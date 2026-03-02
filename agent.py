@@ -1,0 +1,572 @@
+"""
+AI Agent Module for TaskFlow
+Handles natural language processing, task parsing, and intelligent suggestions.
+"""
+
+import json
+import re
+from datetime import datetime, timedelta
+from typing import Optional
+import os
+
+# Try to import OpenAI - will be used if API key is set
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
+class TaskAgent:
+    """AI Agent for task management operations"""
+    
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.client = None
+        
+        if OPENAI_AVAILABLE and self.api_key:
+            self.client = OpenAI(api_key=self.api_key)
+        
+        # Define available tools/functions for the agent
+        self.tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "create_task",
+                    "description": "Create a new task with the specified details",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "description": "The title of the task"
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "Detailed description of the task"
+                            },
+                            "priority": {
+                                "type": "string",
+                                "enum": ["Low", "Medium", "High"],
+                                "description": "Priority level of the task"
+                            },
+                            "due_date": {
+                                "type": "string",
+                                "description": "Due date in YYYY-MM-DD format"
+                            },
+                            "tags": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Tags for categorizing the task"
+                            }
+                        },
+                        "required": ["title"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "break_down_task",
+                    "description": "Break down a complex task into smaller subtasks",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "main_task": {
+                                "type": "string",
+                                "description": "The main task to break down"
+                            },
+                            "subtasks": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": {"type": "string"},
+                                        "priority": {"type": "string", "enum": ["Low", "Medium", "High"]}
+                                    }
+                                },
+                                "description": "List of subtasks"
+                            }
+                        },
+                        "required": ["main_task", "subtasks"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "plan_day",
+                    "description": "Create a daily plan based on existing tasks",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "morning_tasks": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Tasks to complete in the morning"
+                            },
+                            "afternoon_tasks": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Tasks to complete in the afternoon"
+                            },
+                            "evening_tasks": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Tasks to complete in the evening"
+                            },
+                            "summary": {
+                                "type": "string",
+                                "description": "Brief summary of the day plan"
+                            }
+                        },
+                        "required": ["summary"]
+                    }
+                }
+            }
+        ]
+    
+    def _parse_date_naturally(self, text: str) -> Optional[str]:
+        """Parse natural language date references"""
+        text = text.lower()
+        today = datetime.now()
+        
+        # Common patterns
+        if "today" in text:
+            return today.strftime("%Y-%m-%d")
+        elif "tomorrow" in text:
+            return (today + timedelta(days=1)).strftime("%Y-%m-%d")
+        elif "next week" in text:
+            return (today + timedelta(days=7)).strftime("%Y-%m-%d")
+        elif "next monday" in text:
+            days_ahead = 7 - today.weekday()  # Monday is 0
+            if days_ahead <= 0:
+                days_ahead += 7
+            return (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+        elif "next tuesday" in text:
+            days_ahead = 1 - today.weekday()
+            if days_ahead <= 0:
+                days_ahead += 7
+            return (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+        elif "next wednesday" in text:
+            days_ahead = 2 - today.weekday()
+            if days_ahead <= 0:
+                days_ahead += 7
+            return (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+        elif "next thursday" in text:
+            days_ahead = 3 - today.weekday()
+            if days_ahead <= 0:
+                days_ahead += 7
+            return (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+        elif "next friday" in text:
+            days_ahead = 4 - today.weekday()
+            if days_ahead <= 0:
+                days_ahead += 7
+            return (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+        
+        # Try to find date patterns like "March 5" or "3/5"
+        date_match = re.search(r'(\d{1,2})[/\-](\d{1,2})(?:[/\-](\d{2,4}))?', text)
+        if date_match:
+            month, day = int(date_match.group(1)), int(date_match.group(2))
+            year = int(date_match.group(3)) if date_match.group(3) else today.year
+            if year < 100:
+                year += 2000
+            try:
+                return datetime(year, month, day).strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+        
+        return None
+    
+    def _detect_priority(self, text: str) -> str:
+        """Detect priority from natural language"""
+        text = text.lower()
+        
+        high_keywords = ["urgent", "asap", "critical", "important", "high priority", "immediately", "emergency"]
+        low_keywords = ["when you can", "low priority", "eventually", "sometime", "not urgent"]
+        
+        for keyword in high_keywords:
+            if keyword in text:
+                return "High"
+        
+        for keyword in low_keywords:
+            if keyword in text:
+                return "Low"
+        
+        return "Medium"
+    
+    def _extract_tags(self, text: str) -> list:
+        """Extract potential tags from text"""
+        # Look for hashtags
+        hashtags = re.findall(r'#(\w+)', text)
+        if hashtags:
+            return hashtags
+        
+        # Common category keywords
+        categories = {
+            "work": ["work", "job", "office", "meeting", "client", "project"],
+            "personal": ["personal", "home", "family", "health", "exercise"],
+            "shopping": ["buy", "shop", "purchase", "order"],
+            "learning": ["learn", "study", "course", "read", "research"],
+        }
+        
+        tags = []
+        text_lower = text.lower()
+        for tag, keywords in categories.items():
+            for keyword in keywords:
+                if keyword in text_lower:
+                    tags.append(tag)
+                    break
+        
+        return list(set(tags))
+    
+    def parse_task_from_text(self, text: str) -> dict:
+        """Parse a task from natural language without using AI API"""
+        # Basic parsing - extract what we can
+        result = {
+            "title": text.strip(),
+            "description": "",
+            "priority": self._detect_priority(text),
+            "due_date": self._parse_date_naturally(text) or "",
+            "tags": self._extract_tags(text),
+            "status": "To Do"
+        }
+        
+        # Clean up title - remove date references
+        date_patterns = [
+            r'\b(today|tomorrow|next week|next \w+day)\b',
+            r'\b(urgent|asap|high priority|low priority)\b',
+            r'\bat \d{1,2}(:\d{2})?\s*(am|pm)?\b',
+            r'\bon \d{1,2}[/\-]\d{1,2}([/\-]\d{2,4})?\b',
+        ]
+        
+        clean_title = text
+        for pattern in date_patterns:
+            clean_title = re.sub(pattern, '', clean_title, flags=re.IGNORECASE)
+        
+        clean_title = ' '.join(clean_title.split())  # Clean up extra spaces
+        if clean_title:
+            result["title"] = clean_title
+        
+        return result
+    
+    def parse_task_with_ai(self, text: str) -> dict:
+        """Parse a task using OpenAI API for better understanding"""
+        if not self.client:
+            return self.parse_task_from_text(text)
+        
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": f"""You are a task parsing assistant. Extract task details from user input.
+                        Today's date is {today}. Parse dates relative to today.
+                        Always respond with a JSON object containing: title, description, priority (Low/Medium/High), due_date (YYYY-MM-DD or empty), tags (array)."""
+                    },
+                    {
+                        "role": "user",
+                        "content": text
+                    }
+                ],
+                response_format={"type": "json_object"},
+                max_tokens=200
+            )
+            
+            result = json.loads(response.choices[0].message.content)
+            return {
+                "title": result.get("title", text),
+                "description": result.get("description", ""),
+                "priority": result.get("priority", "Medium"),
+                "due_date": result.get("due_date", ""),
+                "tags": result.get("tags", []),
+                "status": "To Do"
+            }
+        except Exception as e:
+            print(f"AI parsing error: {e}")
+            return self.parse_task_from_text(text)
+    
+    def break_down_task_with_ai(self, task_title: str, task_description: str = "") -> list:
+        """Break down a complex task into subtasks using AI"""
+        if not self.client:
+            return self._simple_breakdown(task_title)
+        
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """You are a project planning assistant. Break down complex tasks into 3-6 actionable subtasks.
+                        Respond with a JSON object containing: subtasks (array of objects with title and priority)."""
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Break down this task: {task_title}\n{task_description}"
+                    }
+                ],
+                response_format={"type": "json_object"},
+                max_tokens=300
+            )
+            
+            result = json.loads(response.choices[0].message.content)
+            return result.get("subtasks", self._simple_breakdown(task_title))
+        except Exception as e:
+            print(f"AI breakdown error: {e}")
+            return self._simple_breakdown(task_title)
+    
+    def _simple_breakdown(self, task_title: str) -> list:
+        """Simple rule-based task breakdown"""
+        # Generic subtasks for common task types
+        task_lower = task_title.lower()
+        
+        if any(word in task_lower for word in ["website", "app", "build", "create", "develop"]):
+            return [
+                {"title": "Research and planning", "priority": "High"},
+                {"title": "Design mockups", "priority": "Medium"},
+                {"title": "Set up project structure", "priority": "High"},
+                {"title": "Implement core features", "priority": "High"},
+                {"title": "Testing and debugging", "priority": "Medium"},
+                {"title": "Deploy and review", "priority": "Low"}
+            ]
+        elif any(word in task_lower for word in ["report", "document", "write"]):
+            return [
+                {"title": "Research and gather information", "priority": "High"},
+                {"title": "Create outline", "priority": "Medium"},
+                {"title": "Write first draft", "priority": "High"},
+                {"title": "Review and edit", "priority": "Medium"},
+                {"title": "Final review and submit", "priority": "Low"}
+            ]
+        elif any(word in task_lower for word in ["meeting", "presentation"]):
+            return [
+                {"title": "Define agenda/objectives", "priority": "High"},
+                {"title": "Prepare materials", "priority": "High"},
+                {"title": "Send invites/reminders", "priority": "Medium"},
+                {"title": "Conduct meeting/presentation", "priority": "High"},
+                {"title": "Follow up with notes", "priority": "Low"}
+            ]
+        else:
+            return [
+                {"title": f"Plan: {task_title}", "priority": "High"},
+                {"title": f"Execute: {task_title}", "priority": "High"},
+                {"title": f"Review: {task_title}", "priority": "Medium"}
+            ]
+    
+    def plan_day(self, tasks: list) -> dict:
+        """Create a daily plan based on tasks"""
+        if not tasks:
+            return {
+                "morning_tasks": [],
+                "afternoon_tasks": [],
+                "evening_tasks": [],
+                "summary": "No tasks to plan. Add some tasks to get started!",
+                "suggestions": ["Add your first task using the chat or the Add Task button."]
+            }
+        
+        today = datetime.now().strftime("%Y-%m-%d")
+        
+        # Categorize tasks
+        overdue = []
+        due_today = []
+        high_priority = []
+        in_progress = []
+        other = []
+        
+        for task in tasks:
+            if task["status"] == "Done":
+                continue
+            
+            if task["due_date"]:
+                if task["due_date"] < today:
+                    overdue.append(task)
+                elif task["due_date"] == today:
+                    due_today.append(task)
+                elif task["priority"] == "High":
+                    high_priority.append(task)
+                elif task["status"] == "In Progress":
+                    in_progress.append(task)
+                else:
+                    other.append(task)
+            elif task["priority"] == "High":
+                high_priority.append(task)
+            elif task["status"] == "In Progress":
+                in_progress.append(task)
+            else:
+                other.append(task)
+        
+        # Plan the day
+        morning = (overdue + due_today)[:3]
+        afternoon = (high_priority + in_progress)[:3]
+        evening = other[:2]
+        
+        # Build summary
+        summary_parts = []
+        if overdue:
+            summary_parts.append(f"⚠️ You have {len(overdue)} overdue task(s) to address first.")
+        if due_today:
+            summary_parts.append(f"📅 {len(due_today)} task(s) due today.")
+        if high_priority:
+            summary_parts.append(f"🔴 {len(high_priority)} high-priority task(s) to focus on.")
+        
+        active_count = len([t for t in tasks if t["status"] != "Done"])
+        summary_parts.append(f"📊 Total active tasks: {active_count}")
+        
+        suggestions = []
+        if len(overdue) > 2:
+            suggestions.append("Consider rescheduling some overdue tasks to avoid overwhelm.")
+        if not due_today and not high_priority:
+            suggestions.append("Great! No urgent tasks today. Focus on making progress on your backlog.")
+        if len([t for t in tasks if t["status"] == "In Progress"]) > 3:
+            suggestions.append("You have many tasks in progress. Try to complete some before starting new ones.")
+        
+        return {
+            "morning_tasks": [t["title"] for t in morning],
+            "afternoon_tasks": [t["title"] for t in afternoon],
+            "evening_tasks": [t["title"] for t in evening],
+            "summary": " ".join(summary_parts),
+            "suggestions": suggestions,
+            "stats": {
+                "overdue": len(overdue),
+                "due_today": len(due_today),
+                "high_priority": len(high_priority),
+                "in_progress": len(in_progress)
+            }
+        }
+    
+    def get_productivity_insights(self, tasks: list) -> dict:
+        """Generate productivity insights from task history"""
+        if not tasks:
+            return {
+                "message": "No task data yet. Start adding and completing tasks to see insights!",
+                "insights": []
+            }
+        
+        completed = [t for t in tasks if t["status"] == "Done"]
+        total = len(tasks)
+        completion_rate = len(completed) / total * 100 if total > 0 else 0
+        
+        # Analyze completion times
+        insights = []
+        
+        insights.append(f"📈 Task completion rate: {completion_rate:.1f}%")
+        insights.append(f"✅ Completed: {len(completed)} | 📋 Total: {total}")
+        
+        # Priority distribution
+        high = len([t for t in tasks if t["priority"] == "High"])
+        medium = len([t for t in tasks if t["priority"] == "Medium"])
+        low = len([t for t in tasks if t["priority"] == "Low"])
+        insights.append(f"🎯 Priority mix: {high} High, {medium} Medium, {low} Low")
+        
+        # Suggestions
+        suggestions = []
+        if completion_rate < 30:
+            suggestions.append("Try breaking large tasks into smaller, more manageable pieces.")
+        if high > total * 0.5:
+            suggestions.append("Many tasks marked as high priority. Consider if all are truly urgent.")
+        
+        return {
+            "completion_rate": completion_rate,
+            "insights": insights,
+            "suggestions": suggestions
+        }
+    
+    def chat(self, message: str, tasks: list) -> dict:
+        """Process a chat message and return appropriate response"""
+        message_lower = message.lower().strip()
+        
+        # Command detection
+        if any(phrase in message_lower for phrase in ["plan my day", "what should i do", "plan today"]):
+            plan = self.plan_day(tasks)
+            return {
+                "type": "plan",
+                "response": plan["summary"],
+                "data": plan
+            }
+        
+        elif any(phrase in message_lower for phrase in ["how am i doing", "productivity", "insights", "stats"]):
+            insights = self.get_productivity_insights(tasks)
+            return {
+                "type": "insights",
+                "response": "\n".join(insights["insights"]),
+                "data": insights
+            }
+        
+        elif any(phrase in message_lower for phrase in ["break down", "subtasks for", "split"]):
+            # Extract task name
+            task_name = message
+            for phrase in ["break down", "subtasks for", "split", "into subtasks"]:
+                task_name = task_name.replace(phrase, "").strip()
+            
+            subtasks = self.break_down_task_with_ai(task_name)
+            return {
+                "type": "breakdown",
+                "response": f"Here are suggested subtasks for '{task_name}':",
+                "data": {"main_task": task_name, "subtasks": subtasks}
+            }
+        
+        elif any(phrase in message_lower for phrase in ["add task", "create task", "new task", "remind me"]) or \
+             any(message_lower.startswith(word) for word in ["add ", "create ", "schedule ", "remind "]):
+            # Parse as task creation
+            task_data = self.parse_task_with_ai(message) if self.client else self.parse_task_from_text(message)
+            return {
+                "type": "create_task",
+                "response": f"I'll create a task: '{task_data['title']}'",
+                "data": task_data
+            }
+        
+        elif any(phrase in message_lower for phrase in ["hello", "hi", "hey"]):
+            return {
+                "type": "greeting",
+                "response": "👋 Hello! I'm your TaskFlow assistant. I can help you:\n• Add tasks (try: 'Add task to call John tomorrow')\n• Plan your day (try: 'Plan my day')\n• Break down tasks (try: 'Break down: Build a website')\n• Show insights (try: 'How am I doing?')",
+                "data": None
+            }
+        
+        elif "help" in message_lower:
+            return {
+                "type": "help",
+                "response": """🤖 **TaskFlow AI Assistant**
+
+Here's what I can do:
+
+**📝 Create Tasks**
+• "Add task to review documents"
+• "Create task: Meeting with John tomorrow"
+• "Remind me to call mom at 5pm"
+
+**📋 Plan Your Day**
+• "Plan my day"
+• "What should I work on?"
+
+**🔨 Break Down Tasks**
+• "Break down: Build a portfolio website"
+• "Split this into subtasks: Write quarterly report"
+
+**📊 Get Insights**
+• "How am I doing?"
+• "Show my productivity stats"
+
+Just type naturally and I'll help you manage your tasks!""",
+                "data": None
+            }
+        
+        else:
+            # Default: try to parse as a task
+            task_data = self.parse_task_with_ai(message) if self.client else self.parse_task_from_text(message)
+            return {
+                "type": "create_task",
+                "response": f"Would you like me to create this task?\n**{task_data['title']}**\nPriority: {task_data['priority']}" + (f"\nDue: {task_data['due_date']}" if task_data['due_date'] else ""),
+                "data": task_data,
+                "needs_confirmation": True
+            }
+
+
+# Singleton instance
+_agent_instance = None
+
+def get_agent(api_key: Optional[str] = None) -> TaskAgent:
+    """Get or create the task agent instance"""
+    global _agent_instance
+    if _agent_instance is None or api_key:
+        _agent_instance = TaskAgent(api_key)
+    return _agent_instance
