@@ -9,6 +9,7 @@ import TaskModal from "./components/TaskModal";
 import DeleteModal from "./components/DeleteModal";
 import Toast from "./components/Toast";
 import AIChat from "./components/AIChat";
+import ProductivityView from "./components/ProductivityView";
 
 function App() {
   const [tasks, setTasks] = useState([]);
@@ -22,6 +23,7 @@ function App() {
   const [activeView, setActiveView] = useState("board");
   const [searchQuery, setSearchQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("all");
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   // Modal states
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -54,6 +56,7 @@ function App() {
       ]);
       setTasks(tasksData.tasks || []);
       setStats(statsData);
+      setIsOffline(Boolean(tasksData.offline || statsData.offline || !navigator.onLine));
     } catch (error) {
       console.error("Error fetching data:", error);
       showToast("Error fetching tasks", "error");
@@ -61,7 +64,25 @@ function App() {
   }, []);
 
   useEffect(() => {
+    // Initial API/cache hydration for the app shell.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    const goOnline = () => {
+      setIsOffline(false);
+      fetchData();
+    };
+    const goOffline = () => setIsOffline(true);
+
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
   }, [fetchData]);
 
   // Filter tasks based on search and priority
@@ -151,6 +172,7 @@ function App() {
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           onAddTask={() => handleAddTask()}
+          isOffline={isOffline}
         />
 
         {/* Views */}
@@ -174,6 +196,15 @@ function App() {
 
         {activeView === "calendar" && (
           <CalendarView tasks={filteredTasks} onEditTask={handleEditTask} />
+        )}
+
+        {activeView === "productivity" && (
+          <ProductivityView
+            tasks={filteredTasks}
+            onRefresh={fetchData}
+            onEditTask={handleEditTask}
+            showToast={showToast}
+          />
         )}
       </main>
 

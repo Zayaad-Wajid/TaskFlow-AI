@@ -18,6 +18,10 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
 - **Search & Filter** - Find tasks quickly with search and priority filters
 - **Real-time Stats** - Dashboard showing task counts and overdue items
 - **Dark Theme** - Modern purple/slate color scheme
+- **Team Collaboration** - Assign tasks to teammates and keep lightweight task comments
+- **Offline Mode** - Cached tasks and stats remain available when the backend/network is unavailable
+- **Pomodoro Timer** - Built-in focus timer for 25-minute work sessions
+- **Habit Tracking** - Create daily habits, mark today complete, and track streaks
 
 ### AI Assistant
 - **Natural Language Task Creation** - Create tasks by typing naturally (e.g., "Create a task to review the report by Friday, high priority")
@@ -25,6 +29,8 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
 - **Task Breakdown** - AI splits complex tasks into manageable subtasks
 - **Daily Planner** - Get a prioritized plan for your day's tasks
 - **Productivity Insights** - Analytics on completion rates, overdue tasks, and personalized tips
+- **AI Task Prioritization** - Rank active work by priority, urgency, progress, and ownership
+- **AI Scheduling Assistant** - Generate time-blocked schedules from active tasks and estimates
 - **Chat Interface** - Floating AI assistant accessible from any view
 
 ## Tech Stack
@@ -131,6 +137,7 @@ TaskFlow/
 | PUT    | `/api/tasks/:id`        | Update a task       |
 | DELETE | `/api/tasks/:id`        | Delete a task       |
 | PATCH  | `/api/tasks/:id/status` | Update task status  |
+| POST   | `/api/tasks/:id/comments` | Add a collaboration comment |
 | GET    | `/api/stats`            | Get task statistics |
 
 ### AI Agent
@@ -140,10 +147,22 @@ TaskFlow/
 | POST   | `/api/agent/chat`             | Chat with the AI assistant           |
 | POST   | `/api/agent/parse-task`       | Parse natural language into task     |
 | POST   | `/api/agent/breakdown`        | Break down a task into subtasks      |
-| POST   | `/api/agent/plan-day`         | Get prioritized daily plan           |
-| POST   | `/api/agent/insights`         | Get productivity insights            |
+| GET    | `/api/agent/plan-day`         | Get prioritized daily plan           |
+| GET    | `/api/agent/insights`         | Get productivity insights            |
+| GET    | `/api/agent/prioritize`       | Get AI-ranked task priorities        |
+| GET    | `/api/agent/schedule`         | Get AI-generated time blocks         |
+| POST   | `/api/agent/apply-schedule`   | Save suggested time blocks to tasks  |
 | POST   | `/api/agent/create-from-chat` | Create task from parsed data         |
 | POST   | `/api/agent/create-subtasks`  | Create multiple subtasks for a task  |
+
+### Habits
+
+| Method | Endpoint                    | Description                   |
+| ------ | --------------------------- | ----------------------------- |
+| GET    | `/api/habits`               | Get all habits                |
+| POST   | `/api/habits`               | Create a habit                |
+| PATCH  | `/api/habits/:id/toggle`    | Toggle completion for a date  |
+| DELETE | `/api/habits/:id`           | Delete a habit                |
 
 ## Usage
 
@@ -172,7 +191,8 @@ TaskFlow/
 3. Use **Quick Actions**:
    - **Plan my day** - Get a prioritized list of today's tasks
    - **Insights** - View productivity analytics and tips
-4. Confirm task creation when the AI parses your request
+4. Open the **Productivity** view to use AI priorities, AI scheduling, Pomodoro, habits, and team collaboration panels
+5. Confirm task creation when the AI parses your request
 
 ### AI Modes
 

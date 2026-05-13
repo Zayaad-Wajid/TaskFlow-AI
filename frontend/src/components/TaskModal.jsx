@@ -8,17 +8,23 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
     status: "To Do",
     priority: "Medium",
     due_date: "",
+    assigned_to: "",
+    estimate_minutes: 30,
     tags: "",
   });
 
   useEffect(() => {
+    // Keep the editable form synchronized when a different task is opened.
     if (task) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         title: task.title || "",
         description: task.description || "",
         status: task.status || "To Do",
         priority: task.priority || "Medium",
         due_date: task.due_date || "",
+        assigned_to: task.assigned_to || "",
+        estimate_minutes: task.estimate_minutes || 30,
         tags: task.tags?.join(", ") || "",
       });
     } else {
@@ -28,6 +34,8 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
         status: defaultStatus || "To Do",
         priority: "Medium",
         due_date: "",
+        assigned_to: "",
+        estimate_minutes: 30,
         tags: "",
       });
     }
@@ -49,7 +57,7 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[200]">
-      <div className="bg-slate-900 rounded-2xl w-full max-w-lg shadow-2xl animate-in fade-in zoom-in duration-200">
+      <div className="bg-slate-900 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-auto shadow-2xl animate-in fade-in zoom-in duration-200">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
           <h2 className="text-lg font-semibold text-white">
@@ -132,17 +140,50 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">
+                Due Date
+              </label>
+              <input
+                type="date"
+                value={formData.due_date}
+                onChange={(e) =>
+                  setFormData({ ...formData, due_date: e.target.value })
+                }
+                className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">
+                Estimate (minutes)
+              </label>
+              <input
+                type="number"
+                min="15"
+                step="15"
+                value={formData.estimate_minutes}
+                onChange={(e) =>
+                  setFormData({ ...formData, estimate_minutes: Number(e.target.value) })
+                }
+                className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors"
+              />
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-slate-400 mb-2">
-              Due Date
+              Assignee
             </label>
             <input
-              type="date"
-              value={formData.due_date}
+              type="text"
+              value={formData.assigned_to}
               onChange={(e) =>
-                setFormData({ ...formData, due_date: e.target.value })
+                setFormData({ ...formData, assigned_to: e.target.value })
               }
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors"
+              placeholder="Assign to a teammate..."
+              className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
             />
           </div>
 

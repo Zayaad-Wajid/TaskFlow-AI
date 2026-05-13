@@ -1,6 +1,6 @@
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, WifiOff } from "lucide-react";
 
-const Header = ({ taskCount, searchQuery, setSearchQuery, onAddTask }) => {
+const Header = ({ taskCount, searchQuery, setSearchQuery, onAddTask, isOffline }) => {
   return (
     <header className="h-[70px] px-8 flex items-center justify-between bg-slate-900 border-b border-slate-700 sticky top-0 z-40">
       <div className="flex items-center gap-4">
@@ -8,6 +8,11 @@ const Header = ({ taskCount, searchQuery, setSearchQuery, onAddTask }) => {
         <span className="px-3 py-1 bg-slate-800 rounded-full text-sm text-slate-400">
           {taskCount} tasks
         </span>
+        {isOffline && (
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 text-amber-300 rounded-full text-sm">
+            <WifiOff className="w-4 h-4" /> Offline mode
+          </span>
+        )}
       </div>
 
       <div className="flex items-center gap-4">
