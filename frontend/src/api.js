@@ -1,18 +1,49 @@
 import axios from "axios";
 
 const API_BASE = "/api";
+const TASK_CACHE_KEY = "taskflow-offline-tasks";
+const STATS_CACHE_KEY = "taskflow-offline-stats";
+
+const cacheValue = (key, value) => {
+  localStorage.setItem(key, JSON.stringify(value));
+  return value;
+};
+
+const readCache = (key, fallback) => {
+  try {
+    return JSON.parse(localStorage.getItem(key)) || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const isNetworkError = (error) => !error.response;
 
 export const api = {
-  // Get all tasks
+  // Get all tasks with offline cache fallback
   getTasks: async () => {
-    const response = await axios.get(`${API_BASE}/tasks`);
-    return response.data;
+    try {
+      const response = await axios.get(`${API_BASE}/tasks`);
+      return cacheValue(TASK_CACHE_KEY, response.data);
+    } catch (error) {
+      if (isNetworkError(error)) {
+        return { ...readCache(TASK_CACHE_KEY, { tasks: [] }), offline: true };
+      }
+      throw error;
+    }
   },
 
-  // Get stats
+  // Get stats with offline cache fallback
   getStats: async () => {
-    const response = await axios.get(`${API_BASE}/stats`);
-    return response.data;
+    try {
+      const response = await axios.get(`${API_BASE}/stats`);
+      return cacheValue(STATS_CACHE_KEY, response.data);
+    } catch (error) {
+      if (isNetworkError(error)) {
+        return { ...readCache(STATS_CACHE_KEY, { total: 0, todo: 0, in_progress: 0, done: 0, overdue: 0 }), offline: true };
+      }
+      throw error;
+    }
   },
 
   // Add a new task
@@ -38,6 +69,11 @@ export const api = {
     const response = await axios.patch(`${API_BASE}/tasks/${taskId}/status`, {
       status,
     });
+    return response.data;
+  },
+
+  addTaskComment: async (taskId, comment) => {
+    const response = await axios.post(`${API_BASE}/tasks/${taskId}/comments`, comment);
     return response.data;
   },
 
@@ -76,6 +112,21 @@ export const api = {
     return response.data;
   },
 
+  getPriorities: async () => {
+    const response = await axios.get(`${API_BASE}/agent/prioritize`);
+    return response.data;
+  },
+
+  getSchedule: async () => {
+    const response = await axios.get(`${API_BASE}/agent/schedule`);
+    return response.data;
+  },
+
+  applySchedule: async (blocks) => {
+    const response = await axios.post(`${API_BASE}/agent/apply-schedule`, { blocks });
+    return response.data;
+  },
+
   // Create task from chat
   createTaskFromChat: async (taskData) => {
     const response = await axios.post(
@@ -91,6 +142,26 @@ export const api = {
       subtasks,
       parent_tag: parentTag,
     });
+    return response.data;
+  },
+
+  getHabits: async () => {
+    const response = await axios.get(`${API_BASE}/habits`);
+    return response.data;
+  },
+
+  addHabit: async (habit) => {
+    const response = await axios.post(`${API_BASE}/habits`, habit);
+    return response.data;
+  },
+
+  toggleHabit: async (habitId, date) => {
+    const response = await axios.patch(`${API_BASE}/habits/${habitId}/toggle`, { date });
+    return response.data;
+  },
+
+  deleteHabit: async (habitId) => {
+    const response = await axios.delete(`${API_BASE}/habits/${habitId}`);
     return response.data;
   },
 };

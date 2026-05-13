@@ -1,4 +1,4 @@
-import { Pencil, Trash2, Calendar, GripVertical } from "lucide-react";
+import { Pencil, Trash2, Calendar, GripVertical, User, Clock } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
@@ -76,6 +76,22 @@ const TaskCard = ({ task, onEdit, onDelete }) => {
             <p className="text-sm text-slate-400 mb-3 line-clamp-2">
               {task.description}
             </p>
+          )}
+
+          {(task.assigned_to || task.scheduled_start) && (
+            <div className="flex gap-3 text-xs text-slate-500 mb-3 flex-wrap">
+              {task.assigned_to && (
+                <span className="flex items-center gap-1">
+                  <User className="w-3 h-3" /> {task.assigned_to}
+                </span>
+              )}
+              {task.scheduled_start && (
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {new Date(task.scheduled_start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                </span>
+              )}
+            </div>
           )}
 
           <div className="flex items-center justify-between gap-2 flex-wrap">

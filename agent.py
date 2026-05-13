@@ -471,6 +471,120 @@ class TaskAgent:
             "suggestions": suggestions
         }
     
+
+    def _priority_score(self, task: dict) -> tuple:
+        """Score tasks by urgency, priority, and progress for prioritization."""
+        today = datetime.now().date()
+        score = 0
+        reasons = []
+
+        priority = task.get("priority", "Medium")
+        if priority == "High":
+            score += 50
+            reasons.append("high priority")
+        elif priority == "Medium":
+            score += 25
+            reasons.append("medium priority")
+        else:
+            score += 10
+
+        due_date = task.get("due_date")
+        if due_date:
+            try:
+                due = datetime.fromisoformat(due_date).date()
+                days_until_due = (due - today).days
+                if days_until_due < 0:
+                    score += 60
+                    reasons.append(f"{abs(days_until_due)} day(s) overdue")
+                elif days_until_due == 0:
+                    score += 45
+                    reasons.append("due today")
+                elif days_until_due <= 3:
+                    score += 30
+                    reasons.append(f"due in {days_until_due} day(s)")
+            except ValueError:
+                pass
+
+        if task.get("status") == "In Progress":
+            score += 15
+            reasons.append("already in progress")
+
+        if task.get("assigned_to"):
+            score += 5
+            reasons.append(f"assigned to {task['assigned_to']}")
+
+        return score, reasons or ["backlog task"]
+
+    def prioritize_tasks(self, tasks: list) -> dict:
+        """Rank active tasks and explain why each should be tackled."""
+        active_tasks = [task for task in tasks if task.get("status") != "Done"]
+        ranked = []
+
+        for task in active_tasks:
+            score, reasons = self._priority_score(task)
+            ranked.append({
+                "task_id": task.get("id"),
+                "title": task.get("title", "Untitled Task"),
+                "priority": task.get("priority", "Medium"),
+                "due_date": task.get("due_date", ""),
+                "assigned_to": task.get("assigned_to", ""),
+                "score": score,
+                "reasons": reasons,
+            })
+
+        ranked.sort(key=lambda item: item["score"], reverse=True)
+        return {
+            "prioritized_tasks": ranked,
+            "summary": "AI priority ranking balances due dates, priority, progress, and ownership.",
+        }
+
+    def suggest_schedule(self, tasks: list, workday_start: str = "09:00", workday_end: str = "17:00") -> dict:
+        """Create a simple time-blocked schedule for the highest-priority active tasks."""
+        active_tasks = [task for task in tasks if task.get("status") != "Done"]
+        ranked_tasks = sorted(active_tasks, key=lambda task: self._priority_score(task)[0], reverse=True)
+        today = datetime.now().date()
+
+        try:
+            cursor = datetime.fromisoformat(f"{today}T{workday_start}")
+            end_of_day = datetime.fromisoformat(f"{today}T{workday_end}")
+        except ValueError:
+            cursor = datetime.fromisoformat(f"{today}T09:00")
+            end_of_day = datetime.fromisoformat(f"{today}T17:00")
+
+        blocks = []
+        for task in ranked_tasks:
+            if cursor >= end_of_day:
+                break
+
+            estimate = task.get("estimate_minutes") or 30
+            try:
+                estimate = int(estimate)
+            except (TypeError, ValueError):
+                estimate = 30
+            estimate = min(max(estimate, 15), 180)
+
+            block_end = min(cursor + timedelta(minutes=estimate), end_of_day)
+            if block_end <= cursor:
+                break
+
+            score, reasons = self._priority_score(task)
+            blocks.append({
+                "task_id": task.get("id"),
+                "title": task.get("title", "Untitled Task"),
+                "start": cursor.isoformat(timespec="minutes"),
+                "end": block_end.isoformat(timespec="minutes"),
+                "estimate_minutes": int((block_end - cursor).total_seconds() / 60),
+                "score": score,
+                "reason": ", ".join(reasons),
+            })
+
+            cursor = block_end + timedelta(minutes=10)
+
+        return {
+            "blocks": blocks,
+            "summary": f"Scheduled {len(blocks)} priority task(s) with short buffers between focus blocks.",
+        }
+
     def chat(self, message: str, tasks: list) -> dict:
         """Process a chat message and return appropriate response"""
         message_lower = message.lower().strip()
@@ -484,6 +598,23 @@ class TaskAgent:
                 "data": plan
             }
         
+        elif any(phrase in message_lower for phrase in ["prioritize", "priority ranking", "what is most important"]):
+            priorities = self.prioritize_tasks(tasks)
+            top_titles = [item["title"] for item in priorities["prioritized_tasks"][:3]]
+            return {
+                "type": "priorities",
+                "response": "Top priorities: " + (", ".join(top_titles) if top_titles else "No active tasks."),
+                "data": priorities
+            }
+
+        elif any(phrase in message_lower for phrase in ["schedule my day", "make a schedule", "time block"]):
+            schedule = self.suggest_schedule(tasks)
+            return {
+                "type": "schedule",
+                "response": schedule["summary"],
+                "data": schedule
+            }
+
         elif any(phrase in message_lower for phrase in ["how am i doing", "productivity", "insights", "stats"]):
             insights = self.get_productivity_insights(tasks)
             return {

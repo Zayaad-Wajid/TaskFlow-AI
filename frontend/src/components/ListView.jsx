@@ -47,6 +47,9 @@ const ListView = ({ tasks, onEditTask, onDeleteTask }) => {
                 Due Date
               </th>
               <th className="px-6 py-4 text-left text-xs uppercase tracking-wide text-slate-500 font-semibold">
+                Assignee
+              </th>
+              <th className="px-6 py-4 text-left text-xs uppercase tracking-wide text-slate-500 font-semibold">
                 Actions
               </th>
             </tr>
@@ -55,7 +58,7 @@ const ListView = ({ tasks, onEditTask, onDeleteTask }) => {
             {tasks.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="px-6 py-12 text-center text-slate-500"
                 >
                   No tasks found
@@ -107,6 +110,9 @@ const ListView = ({ tasks, onEditTask, onDeleteTask }) => {
                       <Calendar className="w-4 h-4" />
                       {formatDate(task.due_date)}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-slate-400">
+                    {task.assigned_to || "-"}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">

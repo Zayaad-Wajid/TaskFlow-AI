@@ -4,6 +4,7 @@ import {
   List,
   Calendar,
   Filter,
+  Sparkles,
 } from "lucide-react";
 
 const Sidebar = ({
@@ -17,6 +18,7 @@ const Sidebar = ({
     { id: "board", icon: LayoutDashboard, label: "Board" },
     { id: "list", icon: List, label: "List View" },
     { id: "calendar", icon: Calendar, label: "Calendar" },
+    { id: "productivity", icon: Sparkles, label: "Productivity" },
   ];
 
   return (

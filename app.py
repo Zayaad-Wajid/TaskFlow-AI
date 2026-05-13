@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for
 from flask_cors import CORS
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 from agent import get_agent, TaskAgent
 
@@ -37,6 +37,11 @@ def get_default_task():
         "priority": "Medium",
         "due_date": "",
         "tags": [],
+        "assigned_to": "",
+        "estimate_minutes": 30,
+        "scheduled_start": "",
+        "scheduled_end": "",
+        "comments": [],
         "created_at": datetime.now().isoformat(),
         "completed_at": None
     }
@@ -67,6 +72,11 @@ def add_task():
     new_task["priority"] = task_data.get("priority", "Medium")
     new_task["due_date"] = task_data.get("due_date", "")
     new_task["tags"] = task_data.get("tags", [])
+    new_task["assigned_to"] = task_data.get("assigned_to", "")
+    new_task["estimate_minutes"] = task_data.get("estimate_minutes", 30)
+    new_task["scheduled_start"] = task_data.get("scheduled_start", "")
+    new_task["scheduled_end"] = task_data.get("scheduled_end", "")
+    new_task["comments"] = task_data.get("comments", [])
     
     data["tasks"].append(new_task)
     save_tasks(data)
@@ -86,7 +96,12 @@ def update_task(task_id):
             task["status"] = task_data.get("status", task["status"])
             task["priority"] = task_data.get("priority", task["priority"])
             task["due_date"] = task_data.get("due_date", task["due_date"])
-            task["tags"] = task_data.get("tags", task["tags"])
+            task["tags"] = task_data.get("tags", task.get("tags", []))
+            task["assigned_to"] = task_data.get("assigned_to", task.get("assigned_to", ""))
+            task["estimate_minutes"] = task_data.get("estimate_minutes", task.get("estimate_minutes", 30))
+            task["scheduled_start"] = task_data.get("scheduled_start", task.get("scheduled_start", ""))
+            task["scheduled_end"] = task_data.get("scheduled_end", task.get("scheduled_end", ""))
+            task["comments"] = task_data.get("comments", task.get("comments", []))
             
             # Mark completion time if moved to Done
             if task["status"] == "Done" and not task["completed_at"]:
@@ -132,6 +147,126 @@ def update_task_status(task_id):
             return jsonify({"success": True, "task": task})
     
     return jsonify({"success": False, "error": "Task not found"}), 404
+
+@app.route("/api/tasks/<task_id>/comments", methods=["POST"])
+def add_task_comment(task_id):
+    """Add a collaboration comment to a task."""
+    data = load_tasks()
+    payload = request.json or {}
+    comment_text = payload.get("text", "").strip()
+
+    if not comment_text:
+        return jsonify({"success": False, "error": "Comment text is required"}), 400
+
+    for task in data["tasks"]:
+        if task["id"] == task_id:
+            task.setdefault("comments", [])
+            comment = {
+                "id": str(uuid.uuid4()),
+                "author": payload.get("author", "Teammate"),
+                "text": comment_text,
+                "created_at": datetime.now().isoformat(),
+            }
+            task["comments"].append(comment)
+            save_tasks(data)
+            return jsonify({"success": True, "comment": comment, "task": task})
+
+    return jsonify({"success": False, "error": "Task not found"}), 404
+
+@app.route("/api/agent/prioritize", methods=["GET"])
+def prioritize_tasks():
+    """Return AI-ranked active tasks with reasoning."""
+    data = load_tasks()
+    return jsonify(agent.prioritize_tasks(data["tasks"]))
+
+@app.route("/api/agent/schedule", methods=["GET"])
+def suggest_schedule():
+    """Return a suggested work schedule for active tasks."""
+    data = load_tasks()
+    workday_start = request.args.get("start", "09:00")
+    workday_end = request.args.get("end", "17:00")
+    return jsonify(agent.suggest_schedule(data["tasks"], workday_start, workday_end))
+
+@app.route("/api/agent/apply-schedule", methods=["POST"])
+def apply_schedule():
+    """Apply scheduled time blocks to tasks."""
+    data = load_tasks()
+    blocks = request.json.get("blocks", [])
+    by_id = {task["id"]: task for task in data["tasks"]}
+    updated = []
+
+    for block in blocks:
+        task = by_id.get(block.get("task_id"))
+        if task:
+            task["scheduled_start"] = block.get("start", task.get("scheduled_start", ""))
+            task["scheduled_end"] = block.get("end", task.get("scheduled_end", ""))
+            updated.append(task)
+
+    save_tasks(data)
+    return jsonify({"success": True, "tasks": updated})
+
+@app.route("/api/habits", methods=["GET", "POST"])
+def habits():
+    """List or create habits stored alongside tasks."""
+    data = load_tasks()
+    data.setdefault("habits", [])
+
+    if request.method == "GET":
+        return jsonify({"habits": data["habits"]})
+
+    payload = request.json or {}
+    habit = {
+        "id": str(uuid.uuid4()),
+        "name": payload.get("name", "New Habit"),
+        "frequency": payload.get("frequency", "Daily"),
+        "streak": 0,
+        "completed_dates": [],
+        "created_at": datetime.now().isoformat(),
+    }
+    data["habits"].append(habit)
+    save_tasks(data)
+    return jsonify({"success": True, "habit": habit})
+
+@app.route("/api/habits/<habit_id>/toggle", methods=["PATCH"])
+def toggle_habit(habit_id):
+    """Toggle a habit completion for a date and update streak."""
+    data = load_tasks()
+    data.setdefault("habits", [])
+    date = (request.json or {}).get("date", datetime.now().strftime("%Y-%m-%d"))
+
+    for habit in data["habits"]:
+        if habit["id"] == habit_id:
+            completed_dates = set(habit.get("completed_dates", []))
+            if date in completed_dates:
+                completed_dates.remove(date)
+            else:
+                completed_dates.add(date)
+
+            habit["completed_dates"] = sorted(completed_dates)
+            streak = 0
+            cursor = datetime.now().date()
+            while cursor.strftime("%Y-%m-%d") in completed_dates:
+                streak += 1
+                cursor -= timedelta(days=1)
+            habit["streak"] = streak
+            save_tasks(data)
+            return jsonify({"success": True, "habit": habit})
+
+    return jsonify({"success": False, "error": "Habit not found"}), 404
+
+@app.route("/api/habits/<habit_id>", methods=["DELETE"])
+def delete_habit(habit_id):
+    """Delete a habit."""
+    data = load_tasks()
+    data.setdefault("habits", [])
+    original_length = len(data["habits"])
+    data["habits"] = [habit for habit in data["habits"] if habit["id"] != habit_id]
+
+    if len(data["habits"]) < original_length:
+        save_tasks(data)
+        return jsonify({"success": True})
+
+    return jsonify({"success": False, "error": "Habit not found"}), 404
 
 @app.route("/api/stats")
 def get_stats():
@@ -222,6 +357,10 @@ def create_task_from_chat():
     new_task["priority"] = task_data.get("priority", "Medium")
     new_task["due_date"] = task_data.get("due_date", "")
     new_task["tags"] = task_data.get("tags", [])
+    new_task["assigned_to"] = task_data.get("assigned_to", "")
+    new_task["estimate_minutes"] = task_data.get("estimate_minutes", 30)
+    new_task["scheduled_start"] = task_data.get("scheduled_start", "")
+    new_task["scheduled_end"] = task_data.get("scheduled_end", "")
     
     data["tasks"].append(new_task)
     save_tasks(data)
