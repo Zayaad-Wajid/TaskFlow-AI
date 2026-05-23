@@ -1,28 +1,30 @@
 import { X } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+
+const fieldClass =
+  "w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-slate-900 transition placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-4 focus:ring-cyan-100";
+
+const emptyForm = (defaultStatus = "To Do") => ({
+  title: "",
+  description: "",
+  status: defaultStatus,
+  priority: "Medium",
+  due_date: "",
+  assigned_to: "",
+  estimate_minutes: 30,
+  subtasks: "",
+  recurring_enabled: false,
+  recurring_cadence: "",
+  recurring_next_due_date: "",
+  tags: "",
+});
 
 const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
-  const [formData, setFormData] = useState({
-    title: "",
-    description: "",
-    status: "To Do",
-    priority: "Medium",
-    due_date: "",
-    assigned_to: "",
-    estimate_minutes: 30,
-    subtasks: "",
-    recurring_enabled: false,
-    recurring_cadence: "",
-    recurring_next_due_date: "",
-    reminder_enabled: false,
-    reminder_remind_at: "",
-    reminder_snooze_minutes: 15,
-    tags: "",
-  });
+  const [formData, setFormData] = useState(emptyForm(defaultStatus));
 
   useEffect(() => {
-    // Keep the editable form synchronized when a different task is opened.
     if (task) {
+      // Keep the editable form synchronized when a different task is opened.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         title: task.title || "",
@@ -36,45 +38,36 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
         recurring_enabled: Boolean(task.recurring?.enabled),
         recurring_cadence: task.recurring?.cadence || "",
         recurring_next_due_date: task.recurring?.next_due_date || "",
-        reminder_enabled: Boolean(task.reminder?.enabled),
-        reminder_remind_at: task.reminder?.remind_at || "",
-        reminder_snooze_minutes: task.reminder?.snooze_minutes || 15,
         tags: task.tags?.join(", ") || "",
       });
     } else {
-      setFormData({
-        title: "",
-        description: "",
-        status: defaultStatus || "To Do",
-        priority: "Medium",
-        due_date: "",
-        assigned_to: "",
-        estimate_minutes: 30,
-        subtasks: "",
-        recurring_enabled: false,
-        recurring_cadence: "",
-        recurring_next_due_date: "",
-        reminder_enabled: false,
-        reminder_remind_at: "",
-        reminder_snooze_minutes: 15,
-        tags: "",
-      });
+      setFormData(emptyForm(defaultStatus || "To Do"));
     }
   }, [task, defaultStatus, isOpen]);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSubmit = (event) => {
+    event.preventDefault();
     const taskData = {
-      ...formData,
+      title: formData.title,
+      description: formData.description,
+      status: formData.status,
+      priority: formData.priority,
+      due_date: formData.due_date,
+      assigned_to: formData.assigned_to,
+      estimate_minutes: Number(formData.estimate_minutes) || 30,
       tags: formData.tags
         .split(",")
-        .map((t) => t.trim())
-        .filter((t) => t),
+        .map((tag) => tag.trim())
+        .filter(Boolean),
       subtasks: formData.subtasks
         .split("\n")
         .map((title) => title.trim())
         .filter(Boolean)
-        .map((title, index) => ({ id: task?.subtasks?.[index]?.id || `${Date.now()}-${index}`, title, done: false })),
+        .map((title, index) => ({
+          id: task?.subtasks?.[index]?.id || `${Date.now()}-${index}`,
+          title,
+          done: task?.subtasks?.[index]?.done || false,
+        })),
       recurring: {
         enabled: formData.recurring_enabled,
         cadence: formData.recurring_enabled ? formData.recurring_cadence || "Daily" : "",
@@ -82,101 +75,73 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
           ? formData.recurring_next_due_date || formData.due_date
           : "",
       },
-      reminder: {
-        enabled: formData.reminder_enabled,
-        remind_at: formData.reminder_remind_at,
-        snoozed_until: task?.reminder?.snoozed_until || "",
-        snooze_minutes: Number(formData.reminder_snooze_minutes) || 15,
-      },
     };
-    delete taskData.recurring_enabled;
-    delete taskData.recurring_cadence;
-    delete taskData.recurring_next_due_date;
-    delete taskData.reminder_enabled;
-    delete taskData.reminder_remind_at;
-    delete taskData.reminder_snooze_minutes;
     onSave(taskData, task?.id);
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[200]">
-      <div className="bg-slate-900 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-auto shadow-2xl animate-in fade-in zoom-in duration-200">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
-          <h2 className="text-lg font-semibold text-white">
-            {task ? "Edit Task" : "Add New Task"}
-          </h2>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-lg bg-white shadow-2xl animate-in fade-in zoom-in duration-200">
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">
+              {task ? "Edit task" : "Add task"}
+            </h2>
+            <p className="text-sm text-slate-500">Keep the task clear enough to act on.</p>
+          </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-5 p-6">
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">
-              Title
-            </label>
+            <label className="mb-2 block text-sm font-medium text-slate-600">Title</label>
             <input
               type="text"
               value={formData.title}
-              onChange={(e) =>
-                setFormData({ ...formData, title: e.target.value })
-              }
-              placeholder="Enter task title..."
+              onChange={(event) => setFormData({ ...formData, title: event.target.value })}
+              placeholder="Enter task title"
               required
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
+              className={fieldClass}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">
-              Description
-            </label>
+            <label className="mb-2 block text-sm font-medium text-slate-600">Description</label>
             <textarea
               value={formData.description}
-              onChange={(e) =>
-                setFormData({ ...formData, description: e.target.value })
-              }
-              placeholder="Add a description..."
+              onChange={(event) => setFormData({ ...formData, description: event.target.value })}
+              placeholder="Add helpful details"
               rows={3}
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors resize-none"
+              className={`${fieldClass} resize-none`}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-2">
-                Status
-              </label>
+              <label className="mb-2 block text-sm font-medium text-slate-600">Status</label>
               <select
                 value={formData.status}
-                onChange={(e) =>
-                  setFormData({ ...formData, status: e.target.value })
-                }
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors"
+                onChange={(event) => setFormData({ ...formData, status: event.target.value })}
+                className={fieldClass}
               >
                 <option value="To Do">To Do</option>
                 <option value="In Progress">In Progress</option>
                 <option value="Done">Done</option>
               </select>
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-2">
-                Priority
-              </label>
+              <label className="mb-2 block text-sm font-medium text-slate-600">Priority</label>
               <select
                 value={formData.priority}
-                onChange={(e) =>
-                  setFormData({ ...formData, priority: e.target.value })
-                }
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors"
+                onChange={(event) => setFormData({ ...formData, priority: event.target.value })}
+                className={fieldClass}
               >
                 <option value="Low">Low</option>
                 <option value="Medium">Medium</option>
@@ -185,87 +150,65 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-2">
-                Due Date
-              </label>
+              <label className="mb-2 block text-sm font-medium text-slate-600">Due date</label>
               <input
                 type="date"
                 value={formData.due_date}
-                onChange={(e) =>
-                  setFormData({ ...formData, due_date: e.target.value })
-                }
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors"
+                onChange={(event) => setFormData({ ...formData, due_date: event.target.value })}
+                className={fieldClass}
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-2">
-                Estimate (minutes)
-              </label>
+              <label className="mb-2 block text-sm font-medium text-slate-600">Estimate</label>
               <input
                 type="number"
                 min="15"
                 step="15"
                 value={formData.estimate_minutes}
-                onChange={(e) =>
-                  setFormData({ ...formData, estimate_minutes: Number(e.target.value) })
-                }
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors"
+                onChange={(event) => setFormData({ ...formData, estimate_minutes: Number(event.target.value) })}
+                className={fieldClass}
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-600">Assignee</label>
+              <input
+                type="text"
+                value={formData.assigned_to}
+                onChange={(event) => setFormData({ ...formData, assigned_to: event.target.value })}
+                placeholder="Name"
+                className={fieldClass}
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">
-              Assignee
-            </label>
-            <input
-              type="text"
-              value={formData.assigned_to}
-              onChange={(e) =>
-                setFormData({ ...formData, assigned_to: e.target.value })
-              }
-              placeholder="Assign to a teammate..."
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">
-              Subtasks (one per line)
-            </label>
+            <label className="mb-2 block text-sm font-medium text-slate-600">Subtasks</label>
             <textarea
               value={formData.subtasks}
-              onChange={(e) =>
-                setFormData({ ...formData, subtasks: e.target.value })
-              }
-              placeholder="Draft outline&#10;Review with team&#10;Ship final"
+              onChange={(event) => setFormData({ ...formData, subtasks: event.target.value })}
+              placeholder={"Draft outline\nReview with team\nShip final"}
               rows={3}
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors resize-none"
+              className={`${fieldClass} resize-none`}
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border border-slate-700 rounded-xl">
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
+          <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
               <input
                 type="checkbox"
                 checked={formData.recurring_enabled}
-                onChange={(e) =>
-                  setFormData({ ...formData, recurring_enabled: e.target.checked })
-                }
-                className="accent-violet-500"
+                onChange={(event) => setFormData({ ...formData, recurring_enabled: event.target.checked })}
+                className="accent-cyan-600"
               />
               Recurring
             </label>
             <select
               value={formData.recurring_cadence}
-              onChange={(e) =>
-                setFormData({ ...formData, recurring_cadence: e.target.value })
-              }
+              onChange={(event) => setFormData({ ...formData, recurring_cadence: event.target.value })}
               disabled={!formData.recurring_enabled}
-              className="px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white disabled:opacity-50 focus:outline-none focus:border-violet-500 transition-colors"
+              className={`${fieldClass} disabled:opacity-50`}
             >
               <option value="">Cadence</option>
               <option value="Daily">Daily</option>
@@ -274,77 +217,36 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
             <input
               type="date"
               value={formData.recurring_next_due_date}
-              onChange={(e) =>
-                setFormData({ ...formData, recurring_next_due_date: e.target.value })
-              }
+              onChange={(event) => setFormData({ ...formData, recurring_next_due_date: event.target.value })}
               disabled={!formData.recurring_enabled}
-              className="px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white disabled:opacity-50 focus:outline-none focus:border-violet-500 transition-colors"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border border-slate-700 rounded-xl">
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
-              <input
-                type="checkbox"
-                checked={formData.reminder_enabled}
-                onChange={(e) =>
-                  setFormData({ ...formData, reminder_enabled: e.target.checked })
-                }
-                className="accent-violet-500"
-              />
-              Reminder
-            </label>
-            <input
-              type="datetime-local"
-              value={formData.reminder_remind_at}
-              onChange={(e) =>
-                setFormData({ ...formData, reminder_remind_at: e.target.value })
-              }
-              disabled={!formData.reminder_enabled}
-              className="px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white disabled:opacity-50 focus:outline-none focus:border-violet-500 transition-colors"
-            />
-            <input
-              type="number"
-              min="5"
-              step="5"
-              value={formData.reminder_snooze_minutes}
-              onChange={(e) =>
-                setFormData({ ...formData, reminder_snooze_minutes: Number(e.target.value) })
-              }
-              disabled={!formData.reminder_enabled}
-              className="px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white disabled:opacity-50 focus:outline-none focus:border-violet-500 transition-colors"
+              className={`${fieldClass} disabled:opacity-50`}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">
-              Tags (comma-separated)
-            </label>
+            <label className="mb-2 block text-sm font-medium text-slate-600">Tags</label>
             <input
               type="text"
               value={formData.tags}
-              onChange={(e) =>
-                setFormData({ ...formData, tags: e.target.value })
-              }
+              onChange={(event) => setFormData({ ...formData, tags: event.target.value })}
               placeholder="design, urgent, review"
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
+              className={fieldClass}
             />
           </div>
 
-          {/* Actions */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-700">
+          <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 bg-slate-800 text-white rounded-lg font-medium hover:bg-slate-700 transition-colors"
+              className="rounded-lg border border-slate-200 bg-white px-5 py-2.5 font-medium text-slate-700 transition-colors hover:bg-slate-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-violet-600 text-white rounded-lg font-medium hover:bg-violet-700 transition-colors"
+              className="rounded-lg bg-cyan-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-cyan-700"
             >
-              {task ? "Update Task" : "Add Task"}
+              {task ? "Update task" : "Add task"}
             </button>
           </div>
         </form>

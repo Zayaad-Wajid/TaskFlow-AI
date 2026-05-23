@@ -2,15 +2,15 @@ import { Pencil, Trash2, Calendar } from "lucide-react";
 
 const ListView = ({ tasks, onEditTask, onDeleteTask }) => {
   const priorityColors = {
-    High: "bg-red-500/20 text-red-400",
-    Medium: "bg-amber-500/20 text-amber-400",
-    Low: "bg-emerald-500/20 text-emerald-400",
+    High: "bg-red-50 text-red-700 ring-red-100",
+    Medium: "bg-amber-50 text-amber-700 ring-amber-100",
+    Low: "bg-emerald-50 text-emerald-700 ring-emerald-100",
   };
 
   const statusColors = {
-    "To Do": "bg-indigo-500/20 text-indigo-400",
-    "In Progress": "bg-amber-500/20 text-amber-400",
-    Done: "bg-emerald-500/20 text-emerald-400",
+    "To Do": "bg-cyan-50 text-cyan-700 ring-cyan-100",
+    "In Progress": "bg-amber-50 text-amber-700 ring-amber-100",
+    Done: "bg-emerald-50 text-emerald-700 ring-emerald-100",
   };
 
   const formatDate = (dateStr) => {
@@ -29,27 +29,27 @@ const ListView = ({ tasks, onEditTask, onDeleteTask }) => {
   };
 
   return (
-    <div className="p-6 flex-1">
-      <div className="bg-slate-900/50 rounded-xl overflow-hidden">
+    <div className="flex-1 bg-slate-50 p-6">
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <table className="w-full">
           <thead>
-            <tr className="bg-slate-800/50">
-              <th className="px-6 py-4 text-left text-xs uppercase tracking-wide text-slate-500 font-semibold">
+            <tr className="bg-slate-50">
+              <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Status
               </th>
-              <th className="px-6 py-4 text-left text-xs uppercase tracking-wide text-slate-500 font-semibold">
+              <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Task
               </th>
-              <th className="px-6 py-4 text-left text-xs uppercase tracking-wide text-slate-500 font-semibold">
+              <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Priority
               </th>
-              <th className="px-6 py-4 text-left text-xs uppercase tracking-wide text-slate-500 font-semibold">
+              <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Due Date
               </th>
-              <th className="px-6 py-4 text-left text-xs uppercase tracking-wide text-slate-500 font-semibold">
+              <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Assignee
               </th>
-              <th className="px-6 py-4 text-left text-xs uppercase tracking-wide text-slate-500 font-semibold">
+              <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Actions
               </th>
             </tr>
@@ -68,16 +68,16 @@ const ListView = ({ tasks, onEditTask, onDeleteTask }) => {
               tasks.map((task) => (
                 <tr
                   key={task.id}
-                  className="border-t border-slate-700/50 hover:bg-slate-800/30 transition-colors"
+                  className="border-t border-slate-100 transition-colors hover:bg-cyan-50/40"
                 >
                   <td className="px-6 py-4">
                     <span
-                      className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium ${statusColors[task.status]}`}
+                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ring-1 ${statusColors[task.status]}`}
                     >
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
                           task.status === "To Do"
-                            ? "bg-indigo-400"
+                            ? "bg-cyan-500"
                             : task.status === "In Progress"
                               ? "bg-amber-400"
                               : "bg-emerald-400"
@@ -88,9 +88,9 @@ const ListView = ({ tasks, onEditTask, onDeleteTask }) => {
                   </td>
                   <td className="px-6 py-4">
                     <div>
-                      <h3 className="font-medium text-white">{task.title}</h3>
+                      <h3 className="font-medium text-slate-950">{task.title}</h3>
                       {task.description && (
-                        <p className="text-sm text-slate-400 mt-1 line-clamp-1">
+                        <p className="mt-1 line-clamp-1 text-sm text-slate-500">
                           {task.description}
                         </p>
                       )}
@@ -98,33 +98,33 @@ const ListView = ({ tasks, onEditTask, onDeleteTask }) => {
                   </td>
                   <td className="px-6 py-4">
                     <span
-                      className={`px-2.5 py-1 rounded text-xs font-medium ${priorityColors[task.priority]}`}
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${priorityColors[task.priority]}`}
                     >
                       {task.priority}
                     </span>
                   </td>
                   <td className="px-6 py-4">
                     <span
-                      className={`flex items-center gap-2 text-sm ${isOverdue(task) ? "text-red-400" : "text-slate-400"}`}
+                      className={`flex items-center gap-2 text-sm ${isOverdue(task) ? "text-red-600" : "text-slate-500"}`}
                     >
                       <Calendar className="w-4 h-4" />
                       {formatDate(task.due_date)}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-slate-400">
+                  <td className="px-6 py-4 text-sm text-slate-500">
                     {task.assigned_to || "-"}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">
                       <button
                         onClick={() => onEditTask(task)}
-                        className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+                        className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => onDeleteTask(task.id)}
-                        className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors"
+                        className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>

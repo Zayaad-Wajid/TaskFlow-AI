@@ -17,7 +17,7 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
   - Tags
 - **Search & Filter** - Find tasks quickly with search and priority filters
 - **Real-time Stats** - Dashboard showing task counts and overdue items
-- **Dark Theme** - Modern purple/slate color scheme
+- **Clean UI** - Light, focused interface with calm spacing and friendly interactions
 - **Team Collaboration** - Assign tasks to teammates and keep lightweight task comments
 - **Offline Mode** - Cached tasks and stats remain available when the backend/network is unavailable
 - **Pomodoro Timer** - Built-in focus timer for 25-minute work sessions
@@ -25,11 +25,6 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
 - **Recurring Tasks** - Daily and weekly task series auto-clone from the next due date
 - **Task Dependencies** - Link blocker tasks and surface blocked indicators on cards
 - **Time Tracking** - Log manual or Pomodoro focus sessions per task
-- **Task Templates** - Save repeatable task shapes with title, tags, priority, subtasks, and estimates
-- **Smart Reminders** - Due-date notifications with reminder time and snooze support
-- **Activity Feed** - Audit trail for task edits, status changes, comments, schedules, and integrations
-- **Attachments** - Store task file links or cloud-provider URLs
-- **Calendar and Slack Integrations** - Placeholder sync/notification endpoints ready for provider credentials
 
 ### AI Assistant
 - **Natural Language Task Creation** - Create tasks by typing naturally (e.g., "Create a task to review the report by Friday, high priority")
@@ -45,7 +40,7 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
 
 ### Storage and Migration
 
-TaskFlow still uses `tasks_data.json`. The backend loader normalizes older files in memory and backfills new fields such as `dependency_ids`, `recurring`, `time_logs`, `reminder`, `attachments`, `task_templates`, `activity_feed`, `integrations`, and `settings` before saving. No manual migration step is required.
+TaskFlow still uses `tasks_data.json`. The backend loader normalizes older files in memory and backfills new fields such as `dependency_ids`, `recurring`, `time_logs`, `activity_feed`, and `settings` before saving. No manual migration step is required.
 
 ## Tech Stack
 
@@ -160,11 +155,6 @@ TaskFlow/
 | POST   | `/api/tasks/:id/comments` | Add a collaboration comment |
 | PUT    | `/api/tasks/:id/dependencies` | Replace blocker dependencies |
 | POST   | `/api/tasks/:id/time-logs` | Log focus time for a task |
-| POST   | `/api/tasks/:id/attachments` | Add a task attachment URL |
-| DELETE | `/api/tasks/:id/attachments/:attachment_id` | Remove a task attachment |
-| PATCH  | `/api/tasks/:id/reminder/snooze` | Snooze a task reminder |
-| GET    | `/api/reminders/due`     | Get due-date and reminder notifications |
-| GET    | `/api/activity`          | Get recent activity feed entries |
 | GET    | `/api/stats`            | Get task statistics |
 
 ### AI Agent
@@ -183,20 +173,6 @@ TaskFlow/
 | GET    | `/api/agent/workload-forecast` | Get weekly capacity forecast        |
 | POST   | `/api/agent/create-from-chat` | Create task from parsed data         |
 | POST   | `/api/agent/create-subtasks`  | Create multiple subtasks for a task  |
-
-### Templates and Integrations
-
-| Method | Endpoint                              | Description                    |
-| ------ | ------------------------------------- | ------------------------------ |
-| GET    | `/api/templates`                      | Get task templates             |
-| POST   | `/api/templates`                      | Create a task template         |
-| PUT    | `/api/templates/:id`                  | Update a task template         |
-| DELETE | `/api/templates/:id`                  | Delete a task template         |
-| POST   | `/api/templates/:id/create-task`      | Create a task from a template  |
-| GET    | `/api/integrations`                   | Get integration settings       |
-| PUT    | `/api/integrations`                   | Update integration settings    |
-| POST   | `/api/integrations/google-calendar/sync` | Prepare calendar sync events |
-| POST   | `/api/integrations/slack/notify`      | Record/send Slack notification |
 
 ### Habits
 
@@ -234,7 +210,7 @@ TaskFlow/
 3. Use **Quick Actions**:
    - **Plan my day** - Get a prioritized list of today's tasks
    - **Insights** - View productivity analytics and tips
-4. Open the **Productivity** view to use AI priorities, AI scheduling, Pomodoro, habits, templates, dependencies, reminders, attachments, integrations, activity, summaries, and workload forecasting
+4. Open the **Focus** view to use AI priorities, AI scheduling, Pomodoro, habits, team notes, summaries, and workload forecasting
 5. Confirm task creation when the AI parses your request
 
 ### AI Modes

@@ -24,19 +24,19 @@ const BoardColumn = ({
   const config = statusConfig[status] || statusConfig["To Do"];
 
   return (
-    <div className="min-w-[320px] max-w-[320px] bg-slate-900/50 rounded-xl flex flex-col max-h-[calc(100vh-118px)]">
+    <div className="flex max-h-[calc(100vh-124px)] min-w-[320px] max-w-[320px] flex-col rounded-lg border border-slate-200 bg-slate-50">
       {/* Column Header */}
-      <div className="p-4 flex items-center justify-between border-b border-slate-700/50">
+      <div className="flex items-center justify-between border-b border-slate-200 p-4">
         <div className="flex items-center gap-3">
           <span className={`w-2.5 h-2.5 rounded-full ${config.dot}`}></span>
-          <h2 className="font-semibold text-white">{status}</h2>
-          <span className="px-2 py-0.5 bg-slate-800 rounded-full text-xs text-slate-400">
+          <h2 className="font-semibold text-slate-950">{status}</h2>
+          <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-slate-500 ring-1 ring-slate-200">
             {tasks.length}
           </span>
         </div>
         <button
           onClick={() => onAddTask(status)}
-          className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-cyan-700 hover:ring-1 hover:ring-cyan-100"
         >
           <Plus className="w-5 h-5" />
         </button>
@@ -45,7 +45,7 @@ const BoardColumn = ({
       {/* Tasks Container */}
       <div
         ref={setNodeRef}
-        className={`flex-1 overflow-y-auto p-3 transition-colors ${isOver ? "bg-violet-500/10" : ""}`}
+        className={`flex-1 overflow-y-auto p-3 transition-colors ${isOver ? "bg-cyan-50" : ""}`}
       >
         <SortableContext
           items={tasks.map((t) => t.id)}
