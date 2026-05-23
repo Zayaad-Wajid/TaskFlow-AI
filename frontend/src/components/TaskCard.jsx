@@ -1,4 +1,16 @@
-import { Pencil, Trash2, Calendar, GripVertical, User, Clock } from "lucide-react";
+import {
+  Pencil,
+  Trash2,
+  Calendar,
+  GripVertical,
+  User,
+  Clock,
+  Link2,
+  Repeat,
+  Bell,
+  Paperclip,
+  Timer,
+} from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
@@ -78,7 +90,7 @@ const TaskCard = ({ task, onEdit, onDelete }) => {
             </p>
           )}
 
-          {(task.assigned_to || task.scheduled_start) && (
+          {(task.assigned_to || task.scheduled_start || task.focus_minutes) && (
             <div className="flex gap-3 text-xs text-slate-500 mb-3 flex-wrap">
               {task.assigned_to && (
                 <span className="flex items-center gap-1">
@@ -89,6 +101,36 @@ const TaskCard = ({ task, onEdit, onDelete }) => {
                 <span className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   {new Date(task.scheduled_start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                </span>
+              )}
+              {task.focus_minutes > 0 && (
+                <span className="flex items-center gap-1">
+                  <Timer className="w-3 h-3" /> {task.focus_minutes}m logged
+                </span>
+              )}
+            </div>
+          )}
+
+          {(task.is_blocked || task.recurring?.enabled || task.reminder?.enabled || task.attachments?.length > 0) && (
+            <div className="flex gap-2 text-xs mb-3 flex-wrap">
+              {task.is_blocked && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-500/15 text-red-300">
+                  <Link2 className="w-3 h-3" /> Blocked
+                </span>
+              )}
+              {task.recurring?.enabled && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-cyan-500/15 text-cyan-300">
+                  <Repeat className="w-3 h-3" /> {task.recurring.cadence}
+                </span>
+              )}
+              {task.reminder?.enabled && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-500/15 text-amber-300">
+                  <Bell className="w-3 h-3" /> Reminder
+                </span>
+              )}
+              {task.attachments?.length > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-700 text-slate-300">
+                  <Paperclip className="w-3 h-3" /> {task.attachments.length}
                 </span>
               )}
             </div>

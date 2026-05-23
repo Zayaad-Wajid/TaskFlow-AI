@@ -77,6 +77,73 @@ export const api = {
     return response.data;
   },
 
+  updateTaskDependencies: async (taskId, dependencyIds) => {
+    const response = await axios.put(`${API_BASE}/tasks/${taskId}/dependencies`, {
+      dependency_ids: dependencyIds,
+    });
+    return response.data;
+  },
+
+  addTimeLog: async (taskId, log) => {
+    const response = await axios.post(`${API_BASE}/tasks/${taskId}/time-logs`, log);
+    return response.data;
+  },
+
+  addAttachment: async (taskId, attachment) => {
+    const response = await axios.post(`${API_BASE}/tasks/${taskId}/attachments`, attachment);
+    return response.data;
+  },
+
+  deleteAttachment: async (taskId, attachmentId) => {
+    const response = await axios.delete(`${API_BASE}/tasks/${taskId}/attachments/${attachmentId}`);
+    return response.data;
+  },
+
+  snoozeReminder: async (taskId, minutes) => {
+    const response = await axios.patch(`${API_BASE}/tasks/${taskId}/reminder/snooze`, { minutes });
+    return response.data;
+  },
+
+  getDueReminders: async () => {
+    const response = await axios.get(`${API_BASE}/reminders/due`);
+    return response.data;
+  },
+
+  getActivity: async () => {
+    const response = await axios.get(`${API_BASE}/activity`);
+    return response.data;
+  },
+
+  getTemplates: async () => {
+    const response = await axios.get(`${API_BASE}/templates`);
+    return response.data;
+  },
+
+  addTemplate: async (template) => {
+    const response = await axios.post(`${API_BASE}/templates`, template);
+    return response.data;
+  },
+
+  createTaskFromTemplate: async (templateId, overrides = {}) => {
+    const response = await axios.post(`${API_BASE}/templates/${templateId}/create-task`, overrides);
+    return response.data;
+  },
+
+  updateIntegrations: async (integrations) => {
+    const response = await axios.put(`${API_BASE}/integrations`, integrations);
+    return response.data;
+  },
+
+  syncGoogleCalendar: async () => {
+    const response = await axios.post(`${API_BASE}/integrations/google-calendar/sync`);
+    return response.data;
+  },
+
+  sendSlackNotification: async (message) => {
+    const response = await axios.post(`${API_BASE}/integrations/slack/notify`, { message });
+    return response.data;
+  },
+
   // ==================== AI Agent Endpoints ====================
 
   // Send a chat message to the AI agent
@@ -124,6 +191,16 @@ export const api = {
 
   applySchedule: async (blocks) => {
     const response = await axios.post(`${API_BASE}/agent/apply-schedule`, { blocks });
+    return response.data;
+  },
+
+  getDailySummary: async () => {
+    const response = await axios.get(`${API_BASE}/agent/daily-summary`);
+    return response.data;
+  },
+
+  getWorkloadForecast: async () => {
+    const response = await axios.get(`${API_BASE}/agent/workload-forecast`);
     return response.data;
   },
 

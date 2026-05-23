@@ -10,6 +10,13 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
     due_date: "",
     assigned_to: "",
     estimate_minutes: 30,
+    subtasks: "",
+    recurring_enabled: false,
+    recurring_cadence: "",
+    recurring_next_due_date: "",
+    reminder_enabled: false,
+    reminder_remind_at: "",
+    reminder_snooze_minutes: 15,
     tags: "",
   });
 
@@ -25,6 +32,13 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
         due_date: task.due_date || "",
         assigned_to: task.assigned_to || "",
         estimate_minutes: task.estimate_minutes || 30,
+        subtasks: task.subtasks?.map((item) => item.title || item).join("\n") || "",
+        recurring_enabled: Boolean(task.recurring?.enabled),
+        recurring_cadence: task.recurring?.cadence || "",
+        recurring_next_due_date: task.recurring?.next_due_date || "",
+        reminder_enabled: Boolean(task.reminder?.enabled),
+        reminder_remind_at: task.reminder?.remind_at || "",
+        reminder_snooze_minutes: task.reminder?.snooze_minutes || 15,
         tags: task.tags?.join(", ") || "",
       });
     } else {
@@ -36,6 +50,13 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
         due_date: "",
         assigned_to: "",
         estimate_minutes: 30,
+        subtasks: "",
+        recurring_enabled: false,
+        recurring_cadence: "",
+        recurring_next_due_date: "",
+        reminder_enabled: false,
+        reminder_remind_at: "",
+        reminder_snooze_minutes: 15,
         tags: "",
       });
     }
@@ -49,7 +70,31 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
         .split(",")
         .map((t) => t.trim())
         .filter((t) => t),
+      subtasks: formData.subtasks
+        .split("\n")
+        .map((title) => title.trim())
+        .filter(Boolean)
+        .map((title, index) => ({ id: task?.subtasks?.[index]?.id || `${Date.now()}-${index}`, title, done: false })),
+      recurring: {
+        enabled: formData.recurring_enabled,
+        cadence: formData.recurring_enabled ? formData.recurring_cadence || "Daily" : "",
+        next_due_date: formData.recurring_enabled
+          ? formData.recurring_next_due_date || formData.due_date
+          : "",
+      },
+      reminder: {
+        enabled: formData.reminder_enabled,
+        remind_at: formData.reminder_remind_at,
+        snoozed_until: task?.reminder?.snoozed_until || "",
+        snooze_minutes: Number(formData.reminder_snooze_minutes) || 15,
+      },
     };
+    delete taskData.recurring_enabled;
+    delete taskData.recurring_cadence;
+    delete taskData.recurring_next_due_date;
+    delete taskData.reminder_enabled;
+    delete taskData.reminder_remind_at;
+    delete taskData.reminder_snooze_minutes;
     onSave(taskData, task?.id);
   };
 
@@ -184,6 +229,90 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
               }
               placeholder="Assign to a teammate..."
               className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-2">
+              Subtasks (one per line)
+            </label>
+            <textarea
+              value={formData.subtasks}
+              onChange={(e) =>
+                setFormData({ ...formData, subtasks: e.target.value })
+              }
+              placeholder="Draft outline&#10;Review with team&#10;Ship final"
+              rows={3}
+              className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors resize-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border border-slate-700 rounded-xl">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
+              <input
+                type="checkbox"
+                checked={formData.recurring_enabled}
+                onChange={(e) =>
+                  setFormData({ ...formData, recurring_enabled: e.target.checked })
+                }
+                className="accent-violet-500"
+              />
+              Recurring
+            </label>
+            <select
+              value={formData.recurring_cadence}
+              onChange={(e) =>
+                setFormData({ ...formData, recurring_cadence: e.target.value })
+              }
+              disabled={!formData.recurring_enabled}
+              className="px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white disabled:opacity-50 focus:outline-none focus:border-violet-500 transition-colors"
+            >
+              <option value="">Cadence</option>
+              <option value="Daily">Daily</option>
+              <option value="Weekly">Weekly</option>
+            </select>
+            <input
+              type="date"
+              value={formData.recurring_next_due_date}
+              onChange={(e) =>
+                setFormData({ ...formData, recurring_next_due_date: e.target.value })
+              }
+              disabled={!formData.recurring_enabled}
+              className="px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white disabled:opacity-50 focus:outline-none focus:border-violet-500 transition-colors"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border border-slate-700 rounded-xl">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
+              <input
+                type="checkbox"
+                checked={formData.reminder_enabled}
+                onChange={(e) =>
+                  setFormData({ ...formData, reminder_enabled: e.target.checked })
+                }
+                className="accent-violet-500"
+              />
+              Reminder
+            </label>
+            <input
+              type="datetime-local"
+              value={formData.reminder_remind_at}
+              onChange={(e) =>
+                setFormData({ ...formData, reminder_remind_at: e.target.value })
+              }
+              disabled={!formData.reminder_enabled}
+              className="px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white disabled:opacity-50 focus:outline-none focus:border-violet-500 transition-colors"
+            />
+            <input
+              type="number"
+              min="5"
+              step="5"
+              value={formData.reminder_snooze_minutes}
+              onChange={(e) =>
+                setFormData({ ...formData, reminder_snooze_minutes: Number(e.target.value) })
+              }
+              disabled={!formData.reminder_enabled}
+              className="px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white disabled:opacity-50 focus:outline-none focus:border-violet-500 transition-colors"
             />
           </div>
 

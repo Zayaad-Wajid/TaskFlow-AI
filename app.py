@@ -1,34 +1,42 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
 import os
 from datetime import datetime, timedelta
 import uuid
-from agent import get_agent, TaskAgent
+from agent import get_agent
+from asgiref.wsgi import WsgiToAsgi
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React dev server
 
-# Initialize AI agent (will work without API key using rule-based parsing)
-agent = get_agent(os.getenv("OPENAI_API_KEY"))
+# Initialize AI agent (Gemini when GEMINI_API_KEY is set, rule-based otherwise)
+agent = get_agent(os.getenv("GEMINI_API_KEY"))
+
+# ASGI wrapper for Uvicorn: uvicorn app:asgi_app --reload
+asgi_app = WsgiToAsgi(app)
 
 # Data file path
 DATA_FILE = "tasks_data.json"
+DEFAULT_LISTS = ["To Do", "In Progress", "Done"]
+DEFAULT_CAPACITY_MINUTES = 6 * 60
 
-def load_tasks():
-    """Load tasks from JSON file"""
-    if not os.path.exists(DATA_FILE):
-        return {"tasks": [], "lists": ["To Do", "In Progress", "Done"]}
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
 
-def save_tasks(data):
-    """Save tasks to JSON file"""
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+def now_iso():
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def parse_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value).date()
+    except (TypeError, ValueError):
+        return None
+
 
 def get_default_task():
-    """Return default task structure"""
+    """Return default task structure."""
     return {
         "id": str(uuid.uuid4()),
         "title": "",
@@ -42,111 +50,300 @@ def get_default_task():
         "scheduled_start": "",
         "scheduled_end": "",
         "comments": [],
-        "created_at": datetime.now().isoformat(),
-        "completed_at": None
+        "subtasks": [],
+        "dependency_ids": [],
+        "recurring": {"enabled": False, "cadence": "", "next_due_date": ""},
+        "time_logs": [],
+        "focus_minutes": 0,
+        "reminder": {"enabled": False, "remind_at": "", "snoozed_until": "", "snooze_minutes": 15},
+        "attachments": [],
+        "source_template_id": "",
+        "recurrence_parent_id": "",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "completed_at": None,
     }
+
+
+def normalize_task(task):
+    defaults = get_default_task()
+    defaults.update(task)
+    defaults["tags"] = defaults.get("tags") or []
+    defaults["comments"] = defaults.get("comments") or []
+    defaults["subtasks"] = defaults.get("subtasks") or []
+    defaults["dependency_ids"] = defaults.get("dependency_ids") or []
+    defaults["time_logs"] = defaults.get("time_logs") or []
+    defaults["attachments"] = defaults.get("attachments") or []
+    defaults["recurring"] = {**get_default_task()["recurring"], **(defaults.get("recurring") or {})}
+    defaults["reminder"] = {**get_default_task()["reminder"], **(defaults.get("reminder") or {})}
+    return defaults
+
+
+def normalize_data(data):
+    data = data or {}
+    data.setdefault("tasks", [])
+    data.setdefault("lists", DEFAULT_LISTS)
+    data.setdefault("habits", [])
+    data.setdefault("task_templates", [])
+    data.setdefault("activity_feed", [])
+    data.setdefault("integrations", {
+        "google_calendar": {"enabled": False, "calendar_id": "", "last_sync_at": ""},
+        "slack": {"enabled": False, "webhook_url": "", "channel": "", "last_notification_at": ""},
+    })
+    data.setdefault("settings", {"weekly_capacity_minutes": DEFAULT_CAPACITY_MINUTES * 5})
+    data["tasks"] = [normalize_task(task) for task in data["tasks"]]
+    return data
+
+
+def load_tasks():
+    """Load tasks from JSON file and migrate older JSON shapes in memory."""
+    if not os.path.exists(DATA_FILE):
+        return normalize_data({"tasks": [], "lists": DEFAULT_LISTS})
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        return normalize_data(json.load(f))
+
+
+def save_tasks(data):
+    """Save tasks to JSON file."""
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(normalize_data(data), f, indent=2)
+
+
+def record_activity(data, action, task=None, detail="", actor="TaskFlow"):
+    entry = {
+        "id": str(uuid.uuid4()),
+        "action": action,
+        "task_id": task.get("id") if task else "",
+        "task_title": task.get("title") if task else "",
+        "detail": detail,
+        "actor": actor,
+        "created_at": now_iso(),
+    }
+    data.setdefault("activity_feed", []).insert(0, entry)
+    data["activity_feed"] = data["activity_feed"][:200]
+    return entry
+
+
+def apply_task_payload(task, payload):
+    editable_fields = [
+        "title", "description", "status", "priority", "due_date", "tags", "assigned_to",
+        "estimate_minutes", "scheduled_start", "scheduled_end", "comments", "subtasks",
+        "dependency_ids", "recurring", "reminder", "attachments", "source_template_id",
+    ]
+    for field in editable_fields:
+        if field in payload:
+            task[field] = payload[field]
+    task["dependency_ids"] = [dep for dep in task.get("dependency_ids", []) if dep != task["id"]]
+    task["recurring"] = {**get_default_task()["recurring"], **(task.get("recurring") or {})}
+    task["reminder"] = {**get_default_task()["reminder"], **(task.get("reminder") or {})}
+    task["updated_at"] = now_iso()
+
+    if task["status"] == "Done" and not task.get("completed_at"):
+        task["completed_at"] = now_iso()
+    elif task["status"] != "Done":
+        task["completed_at"] = None
+
+
+def get_task_or_404(data, task_id):
+    for task in data["tasks"]:
+        if task["id"] == task_id:
+            return task
+    return None
+
+
+def clone_recurring_tasks(data):
+    """Clone due recurring tasks and move the series cursor forward."""
+    today = datetime.now().date()
+    created = []
+
+    for task in list(data["tasks"]):
+        recurring = task.get("recurring") or {}
+        if not recurring.get("enabled") or task.get("recurrence_parent_id"):
+            continue
+
+        cadence = recurring.get("cadence")
+        next_due = parse_date(recurring.get("next_due_date") or task.get("due_date"))
+        if cadence not in {"Daily", "Weekly"} or not next_due:
+            continue
+
+        step = timedelta(days=1 if cadence == "Daily" else 7)
+        clones_for_task = 0
+        while next_due <= today and clones_for_task < 30:
+            clone = normalize_task({
+                **task,
+                "id": str(uuid.uuid4()),
+                "status": "To Do",
+                "due_date": next_due.isoformat(),
+                "scheduled_start": "",
+                "scheduled_end": "",
+                "comments": [],
+                "time_logs": [],
+                "focus_minutes": 0,
+                "attachments": list(task.get("attachments", [])),
+                "recurring": {"enabled": False, "cadence": "", "next_due_date": ""},
+                "recurrence_parent_id": task["id"],
+                "created_at": now_iso(),
+                "updated_at": now_iso(),
+                "completed_at": None,
+            })
+            data["tasks"].append(clone)
+            created.append(clone)
+            record_activity(data, "recurring_clone", clone, f"Created from {task.get('title')}")
+            next_due += step
+            clones_for_task += 1
+
+        task["recurring"]["next_due_date"] = next_due.isoformat()
+
+    return created
+
+
+def task_blockers(task, tasks_by_id):
+    blockers = []
+    for dep_id in task.get("dependency_ids", []):
+        blocker = tasks_by_id.get(dep_id)
+        if blocker and blocker.get("status") != "Done":
+            blockers.append(blocker)
+    return blockers
+
+
+def task_payload(task, tasks_by_id=None):
+    tasks_by_id = tasks_by_id or {}
+    blockers = task_blockers(task, tasks_by_id)
+    blocking = [
+        candidate["id"]
+        for candidate in tasks_by_id.values()
+        if task["id"] in candidate.get("dependency_ids", []) and candidate.get("status") != "Done"
+    ]
+    return {**task, "blocked_by": blockers, "blocking_task_ids": blocking, "is_blocked": bool(blockers)}
+
+
+def send_slack_notification(data, message):
+    slack = data.get("integrations", {}).get("slack", {})
+    if not slack.get("enabled"):
+        return {"sent": False, "reason": "Slack integration is disabled"}
+    slack["last_notification_at"] = now_iso()
+    return {"sent": True, "message": message, "channel": slack.get("channel", "")}
+
+
+def sync_google_calendar(data):
+    integration = data.get("integrations", {}).get("google_calendar", {})
+    if not integration.get("enabled"):
+        return {"synced": False, "reason": "Google Calendar integration is disabled", "events": []}
+    events = [
+        {
+            "task_id": task["id"],
+            "title": task["title"],
+            "start": task.get("scheduled_start") or task.get("due_date"),
+            "end": task.get("scheduled_end") or task.get("due_date"),
+        }
+        for task in data["tasks"]
+        if task.get("scheduled_start") or task.get("due_date")
+    ]
+    integration["last_sync_at"] = now_iso()
+    return {"synced": True, "events": events, "calendar_id": integration.get("calendar_id", "")}
+
 
 # Routes
 @app.route("/")
 def index():
-    """Main dashboard page"""
-    data = load_tasks()
-    return render_template("index.html", data=data)
+    """Backend health/info endpoint.
+
+    The React app lives in frontend/. Run it with Vite during development.
+    """
+    return jsonify({
+        "name": "TaskFlow-AI API",
+        "status": "ok",
+        "docs": "Use /api/tasks, /api/stats, and the other /api endpoints.",
+        "frontend": "Run `cd frontend && npm run dev` for the React UI.",
+    })
+
 
 @app.route("/api/tasks", methods=["GET"])
 def get_tasks():
-    """Get all tasks"""
+    """Get all tasks."""
     data = load_tasks()
-    return jsonify(data)
+    created = clone_recurring_tasks(data)
+    if created:
+        save_tasks(data)
+    tasks_by_id = {task["id"]: task for task in data["tasks"]}
+    response = {**data, "tasks": [task_payload(task, tasks_by_id) for task in data["tasks"]]}
+    return jsonify(response)
+
 
 @app.route("/api/tasks", methods=["POST"])
 def add_task():
-    """Add a new task"""
+    """Add a new task."""
     data = load_tasks()
-    task_data = request.json
-    
+    task_data = request.json or {}
+
     new_task = get_default_task()
-    new_task["title"] = task_data.get("title", "Untitled Task")
-    new_task["description"] = task_data.get("description", "")
-    new_task["status"] = task_data.get("status", "To Do")
-    new_task["priority"] = task_data.get("priority", "Medium")
-    new_task["due_date"] = task_data.get("due_date", "")
-    new_task["tags"] = task_data.get("tags", [])
-    new_task["assigned_to"] = task_data.get("assigned_to", "")
-    new_task["estimate_minutes"] = task_data.get("estimate_minutes", 30)
-    new_task["scheduled_start"] = task_data.get("scheduled_start", "")
-    new_task["scheduled_end"] = task_data.get("scheduled_end", "")
-    new_task["comments"] = task_data.get("comments", [])
-    
+    apply_task_payload(new_task, task_data)
     data["tasks"].append(new_task)
+    record_activity(data, "task_created", new_task, "Task created")
+    if new_task.get("assigned_to"):
+        send_slack_notification(data, f"{new_task['title']} assigned to {new_task['assigned_to']}")
     save_tasks(data)
-    
+
     return jsonify({"success": True, "task": new_task})
+
 
 @app.route("/api/tasks/<task_id>", methods=["PUT"])
 def update_task(task_id):
-    """Update an existing task"""
+    """Update an existing task."""
     data = load_tasks()
-    task_data = request.json
-    
-    for task in data["tasks"]:
-        if task["id"] == task_id:
-            task["title"] = task_data.get("title", task["title"])
-            task["description"] = task_data.get("description", task["description"])
-            task["status"] = task_data.get("status", task["status"])
-            task["priority"] = task_data.get("priority", task["priority"])
-            task["due_date"] = task_data.get("due_date", task["due_date"])
-            task["tags"] = task_data.get("tags", task.get("tags", []))
-            task["assigned_to"] = task_data.get("assigned_to", task.get("assigned_to", ""))
-            task["estimate_minutes"] = task_data.get("estimate_minutes", task.get("estimate_minutes", 30))
-            task["scheduled_start"] = task_data.get("scheduled_start", task.get("scheduled_start", ""))
-            task["scheduled_end"] = task_data.get("scheduled_end", task.get("scheduled_end", ""))
-            task["comments"] = task_data.get("comments", task.get("comments", []))
-            
-            # Mark completion time if moved to Done
-            if task["status"] == "Done" and not task["completed_at"]:
-                task["completed_at"] = datetime.now().isoformat()
-            elif task["status"] != "Done":
-                task["completed_at"] = None
-            
-            save_tasks(data)
-            return jsonify({"success": True, "task": task})
-    
-    return jsonify({"success": False, "error": "Task not found"}), 404
+    task_data = request.json or {}
+
+    task = get_task_or_404(data, task_id)
+    if not task:
+        return jsonify({"success": False, "error": "Task not found"}), 404
+
+    before = {key: task.get(key) for key in ["title", "status", "priority", "due_date", "assigned_to"]}
+    apply_task_payload(task, task_data)
+    changed = [key for key, value in before.items() if task.get(key) != value]
+    record_activity(data, "task_updated", task, f"Updated {', '.join(changed) if changed else 'task details'}")
+    if "status" in changed:
+        send_slack_notification(data, f"{task['title']} moved to {task['status']}")
+    save_tasks(data)
+    return jsonify({"success": True, "task": task})
+
 
 @app.route("/api/tasks/<task_id>", methods=["DELETE"])
 def delete_task(task_id):
-    """Delete a task"""
+    """Delete a task."""
     data = load_tasks()
-    
-    original_length = len(data["tasks"])
+    task = get_task_or_404(data, task_id)
+    if not task:
+        return jsonify({"success": False, "error": "Task not found"}), 404
+
     data["tasks"] = [t for t in data["tasks"] if t["id"] != task_id]
-    
-    if len(data["tasks"]) < original_length:
-        save_tasks(data)
-        return jsonify({"success": True})
-    
-    return jsonify({"success": False, "error": "Task not found"}), 404
+    for candidate in data["tasks"]:
+        candidate["dependency_ids"] = [dep for dep in candidate.get("dependency_ids", []) if dep != task_id]
+    record_activity(data, "task_deleted", task, "Task deleted")
+    save_tasks(data)
+    return jsonify({"success": True})
+
 
 @app.route("/api/tasks/<task_id>/status", methods=["PATCH"])
 def update_task_status(task_id):
-    """Update task status (for drag and drop)"""
+    """Update task status (for drag and drop)."""
     data = load_tasks()
-    new_status = request.json.get("status")
-    
-    for task in data["tasks"]:
-        if task["id"] == task_id:
-            task["status"] = new_status
-            
-            if new_status == "Done" and not task["completed_at"]:
-                task["completed_at"] = datetime.now().isoformat()
-            elif new_status != "Done":
-                task["completed_at"] = None
-            
-            save_tasks(data)
-            return jsonify({"success": True, "task": task})
-    
-    return jsonify({"success": False, "error": "Task not found"}), 404
+    new_status = (request.json or {}).get("status")
+    task = get_task_or_404(data, task_id)
+    if not task:
+        return jsonify({"success": False, "error": "Task not found"}), 404
+
+    task["status"] = new_status
+    task["updated_at"] = now_iso()
+    if new_status == "Done" and not task.get("completed_at"):
+        task["completed_at"] = now_iso()
+    elif new_status != "Done":
+        task["completed_at"] = None
+
+    record_activity(data, "status_changed", task, f"Moved to {new_status}")
+    send_slack_notification(data, f"{task['title']} moved to {new_status}")
+    save_tasks(data)
+    return jsonify({"success": True, "task": task})
+
 
 @app.route("/api/tasks/<task_id>/comments", methods=["POST"])
 def add_task_comment(task_id):
@@ -158,26 +355,250 @@ def add_task_comment(task_id):
     if not comment_text:
         return jsonify({"success": False, "error": "Comment text is required"}), 400
 
-    for task in data["tasks"]:
-        if task["id"] == task_id:
-            task.setdefault("comments", [])
-            comment = {
-                "id": str(uuid.uuid4()),
-                "author": payload.get("author", "Teammate"),
-                "text": comment_text,
-                "created_at": datetime.now().isoformat(),
-            }
-            task["comments"].append(comment)
-            save_tasks(data)
-            return jsonify({"success": True, "comment": comment, "task": task})
+    task = get_task_or_404(data, task_id)
+    if not task:
+        return jsonify({"success": False, "error": "Task not found"}), 404
 
-    return jsonify({"success": False, "error": "Task not found"}), 404
+    comment = {
+        "id": str(uuid.uuid4()),
+        "author": payload.get("author", "Teammate"),
+        "text": comment_text,
+        "created_at": now_iso(),
+    }
+    task.setdefault("comments", []).append(comment)
+    task["updated_at"] = now_iso()
+    record_activity(data, "comment_added", task, f"{comment['author']} commented", comment["author"])
+    send_slack_notification(data, f"New comment on {task['title']}: {comment_text}")
+    save_tasks(data)
+    return jsonify({"success": True, "comment": comment, "task": task})
+
+
+@app.route("/api/tasks/<task_id>/dependencies", methods=["PUT"])
+def update_task_dependencies(task_id):
+    """Replace blocker dependencies for a task."""
+    data = load_tasks()
+    payload = request.json or {}
+    task = get_task_or_404(data, task_id)
+    if not task:
+        return jsonify({"success": False, "error": "Task not found"}), 404
+
+    valid_ids = {candidate["id"] for candidate in data["tasks"] if candidate["id"] != task_id}
+    task["dependency_ids"] = [dep_id for dep_id in payload.get("dependency_ids", []) if dep_id in valid_ids]
+    task["updated_at"] = now_iso()
+    record_activity(data, "dependencies_updated", task, f"{len(task['dependency_ids'])} blocker(s) linked")
+    save_tasks(data)
+    return jsonify({"success": True, "task": task_payload(task, {t["id"]: t for t in data["tasks"]})})
+
+
+@app.route("/api/tasks/<task_id>/time-logs", methods=["POST"])
+def add_time_log(task_id):
+    """Add a focus/time tracking log for a task."""
+    data = load_tasks()
+    payload = request.json or {}
+    task = get_task_or_404(data, task_id)
+    if not task:
+        return jsonify({"success": False, "error": "Task not found"}), 404
+
+    minutes = int(payload.get("minutes") or 0)
+    if minutes <= 0:
+        return jsonify({"success": False, "error": "Minutes must be positive"}), 400
+
+    log = {
+        "id": str(uuid.uuid4()),
+        "minutes": minutes,
+        "source": payload.get("source", "manual"),
+        "note": payload.get("note", ""),
+        "started_at": payload.get("started_at", ""),
+        "ended_at": payload.get("ended_at", now_iso()),
+        "created_at": now_iso(),
+    }
+    task.setdefault("time_logs", []).append(log)
+    task["focus_minutes"] = sum(int(item.get("minutes") or 0) for item in task["time_logs"])
+    task["updated_at"] = now_iso()
+    record_activity(data, "time_logged", task, f"{minutes} focus minute(s) logged")
+    save_tasks(data)
+    return jsonify({"success": True, "log": log, "task": task})
+
+
+@app.route("/api/tasks/<task_id>/attachments", methods=["POST"])
+def add_attachment(task_id):
+    """Attach a URL or uploaded cloud object metadata to a task."""
+    data = load_tasks()
+    payload = request.json or {}
+    task = get_task_or_404(data, task_id)
+    if not task:
+        return jsonify({"success": False, "error": "Task not found"}), 404
+    if not payload.get("url"):
+        return jsonify({"success": False, "error": "Attachment URL is required"}), 400
+
+    attachment = {
+        "id": str(uuid.uuid4()),
+        "name": payload.get("name") or payload["url"],
+        "url": payload["url"],
+        "provider": payload.get("provider", "url"),
+        "created_at": now_iso(),
+    }
+    task.setdefault("attachments", []).append(attachment)
+    task["updated_at"] = now_iso()
+    record_activity(data, "attachment_added", task, attachment["name"])
+    save_tasks(data)
+    return jsonify({"success": True, "attachment": attachment, "task": task})
+
+
+@app.route("/api/tasks/<task_id>/attachments/<attachment_id>", methods=["DELETE"])
+def delete_attachment(task_id, attachment_id):
+    data = load_tasks()
+    task = get_task_or_404(data, task_id)
+    if not task:
+        return jsonify({"success": False, "error": "Task not found"}), 404
+    original_length = len(task.get("attachments", []))
+    task["attachments"] = [item for item in task.get("attachments", []) if item["id"] != attachment_id]
+    if len(task["attachments"]) == original_length:
+        return jsonify({"success": False, "error": "Attachment not found"}), 404
+    record_activity(data, "attachment_deleted", task, "Attachment removed")
+    save_tasks(data)
+    return jsonify({"success": True, "task": task})
+
+
+@app.route("/api/tasks/<task_id>/reminder/snooze", methods=["PATCH"])
+def snooze_reminder(task_id):
+    data = load_tasks()
+    payload = request.json or {}
+    task = get_task_or_404(data, task_id)
+    if not task:
+        return jsonify({"success": False, "error": "Task not found"}), 404
+    minutes = int(payload.get("minutes") or task.get("reminder", {}).get("snooze_minutes") or 15)
+    task["reminder"]["snoozed_until"] = (datetime.now() + timedelta(minutes=minutes)).isoformat(timespec="minutes")
+    record_activity(data, "reminder_snoozed", task, f"Snoozed {minutes} minute(s)")
+    save_tasks(data)
+    return jsonify({"success": True, "task": task})
+
+
+@app.route("/api/reminders/due", methods=["GET"])
+def due_reminders():
+    data = load_tasks()
+    now = datetime.now()
+    due = []
+    for task in data["tasks"]:
+        if task.get("status") == "Done":
+            continue
+        reminder = task.get("reminder") or {}
+        due_date = parse_date(task.get("due_date"))
+        remind_at = reminder.get("snoozed_until") or reminder.get("remind_at")
+        should_remind = False
+        if reminder.get("enabled") and remind_at:
+            try:
+                should_remind = datetime.fromisoformat(remind_at) <= now
+            except ValueError:
+                should_remind = False
+        if due_date and due_date <= now.date():
+            should_remind = True
+        if should_remind:
+            due.append(task)
+    return jsonify({"reminders": due})
+
+
+@app.route("/api/activity", methods=["GET"])
+def get_activity():
+    data = load_tasks()
+    limit = int(request.args.get("limit", 50))
+    return jsonify({"activity": data.get("activity_feed", [])[:limit]})
+
+
+@app.route("/api/templates", methods=["GET", "POST"])
+def task_templates():
+    data = load_tasks()
+    data.setdefault("task_templates", [])
+    if request.method == "GET":
+        return jsonify({"templates": data["task_templates"]})
+
+    payload = request.json or {}
+    template = {
+        "id": str(uuid.uuid4()),
+        "name": payload.get("name") or payload.get("title") or "Task Template",
+        "title": payload.get("title", ""),
+        "description": payload.get("description", ""),
+        "priority": payload.get("priority", "Medium"),
+        "tags": payload.get("tags", []),
+        "subtasks": payload.get("subtasks", []),
+        "estimate_minutes": payload.get("estimate_minutes", 30),
+        "created_at": now_iso(),
+    }
+    data["task_templates"].append(template)
+    record_activity(data, "template_created", None, template["name"])
+    save_tasks(data)
+    return jsonify({"success": True, "template": template})
+
+
+@app.route("/api/templates/<template_id>", methods=["PUT", "DELETE"])
+def update_template(template_id):
+    data = load_tasks()
+    template = next((item for item in data.get("task_templates", []) if item["id"] == template_id), None)
+    if not template:
+        return jsonify({"success": False, "error": "Template not found"}), 404
+    if request.method == "DELETE":
+        data["task_templates"] = [item for item in data["task_templates"] if item["id"] != template_id]
+        record_activity(data, "template_deleted", None, template["name"])
+        save_tasks(data)
+        return jsonify({"success": True})
+    template.update(request.json or {})
+    record_activity(data, "template_updated", None, template["name"])
+    save_tasks(data)
+    return jsonify({"success": True, "template": template})
+
+
+@app.route("/api/templates/<template_id>/create-task", methods=["POST"])
+def create_task_from_template(template_id):
+    data = load_tasks()
+    template = next((item for item in data.get("task_templates", []) if item["id"] == template_id), None)
+    if not template:
+        return jsonify({"success": False, "error": "Template not found"}), 404
+    payload = request.json or {}
+    task = get_default_task()
+    apply_task_payload(task, {**template, **payload, "source_template_id": template_id})
+    data["tasks"].append(task)
+    record_activity(data, "task_created_from_template", task, template["name"])
+    save_tasks(data)
+    return jsonify({"success": True, "task": task})
+
+
+@app.route("/api/integrations", methods=["GET", "PUT"])
+def integrations():
+    data = load_tasks()
+    if request.method == "GET":
+        return jsonify({"integrations": data["integrations"]})
+    incoming = request.json or {}
+    data["integrations"] = {**data["integrations"], **incoming}
+    record_activity(data, "integrations_updated", None, "Integration settings changed")
+    save_tasks(data)
+    return jsonify({"success": True, "integrations": data["integrations"]})
+
+
+@app.route("/api/integrations/google-calendar/sync", methods=["POST"])
+def google_calendar_sync():
+    data = load_tasks()
+    result = sync_google_calendar(data)
+    record_activity(data, "calendar_sync", None, "Google Calendar sync requested")
+    save_tasks(data)
+    return jsonify(result)
+
+
+@app.route("/api/integrations/slack/notify", methods=["POST"])
+def slack_notify():
+    data = load_tasks()
+    message = (request.json or {}).get("message", "TaskFlow notification")
+    result = send_slack_notification(data, message)
+    record_activity(data, "slack_notification", None, message)
+    save_tasks(data)
+    return jsonify(result)
+
 
 @app.route("/api/agent/prioritize", methods=["GET"])
 def prioritize_tasks():
     """Return AI-ranked active tasks with reasoning."""
     data = load_tasks()
     return jsonify(agent.prioritize_tasks(data["tasks"]))
+
 
 @app.route("/api/agent/schedule", methods=["GET"])
 def suggest_schedule():
@@ -187,11 +608,12 @@ def suggest_schedule():
     workday_end = request.args.get("end", "17:00")
     return jsonify(agent.suggest_schedule(data["tasks"], workday_start, workday_end))
 
+
 @app.route("/api/agent/apply-schedule", methods=["POST"])
 def apply_schedule():
     """Apply scheduled time blocks to tasks."""
     data = load_tasks()
-    blocks = request.json.get("blocks", [])
+    blocks = (request.json or {}).get("blocks", [])
     by_id = {task["id"]: task for task in data["tasks"]}
     updated = []
 
@@ -200,10 +622,27 @@ def apply_schedule():
         if task:
             task["scheduled_start"] = block.get("start", task.get("scheduled_start", ""))
             task["scheduled_end"] = block.get("end", task.get("scheduled_end", ""))
+            task["updated_at"] = now_iso()
             updated.append(task)
+            record_activity(data, "schedule_applied", task, f"{task['scheduled_start']} to {task['scheduled_end']}")
 
+    sync_google_calendar(data)
     save_tasks(data)
     return jsonify({"success": True, "tasks": updated})
+
+
+@app.route("/api/agent/daily-summary", methods=["GET"])
+def daily_summary():
+    data = load_tasks()
+    return jsonify(agent.daily_summary(data["tasks"], data.get("activity_feed", [])))
+
+
+@app.route("/api/agent/workload-forecast", methods=["GET"])
+def workload_forecast():
+    data = load_tasks()
+    capacity = int(request.args.get("capacity", data.get("settings", {}).get("weekly_capacity_minutes", DEFAULT_CAPACITY_MINUTES * 5)))
+    return jsonify(agent.workload_forecast(data["tasks"], capacity))
+
 
 @app.route("/api/habits", methods=["GET", "POST"])
 def habits():
@@ -221,11 +660,13 @@ def habits():
         "frequency": payload.get("frequency", "Daily"),
         "streak": 0,
         "completed_dates": [],
-        "created_at": datetime.now().isoformat(),
+        "created_at": now_iso(),
     }
     data["habits"].append(habit)
+    record_activity(data, "habit_created", None, habit["name"])
     save_tasks(data)
     return jsonify({"success": True, "habit": habit})
+
 
 @app.route("/api/habits/<habit_id>/toggle", methods=["PATCH"])
 def toggle_habit(habit_id):
@@ -249,143 +690,148 @@ def toggle_habit(habit_id):
                 streak += 1
                 cursor -= timedelta(days=1)
             habit["streak"] = streak
+            record_activity(data, "habit_toggled", None, f"{habit['name']} on {date}")
             save_tasks(data)
             return jsonify({"success": True, "habit": habit})
 
     return jsonify({"success": False, "error": "Habit not found"}), 404
+
 
 @app.route("/api/habits/<habit_id>", methods=["DELETE"])
 def delete_habit(habit_id):
     """Delete a habit."""
     data = load_tasks()
     data.setdefault("habits", [])
-    original_length = len(data["habits"])
-    data["habits"] = [habit for habit in data["habits"] if habit["id"] != habit_id]
+    habit = next((item for item in data["habits"] if item["id"] == habit_id), None)
+    if not habit:
+        return jsonify({"success": False, "error": "Habit not found"}), 404
+    data["habits"] = [item for item in data["habits"] if item["id"] != habit_id]
+    record_activity(data, "habit_deleted", None, habit["name"])
+    save_tasks(data)
+    return jsonify({"success": True})
 
-    if len(data["habits"]) < original_length:
-        save_tasks(data)
-        return jsonify({"success": True})
-
-    return jsonify({"success": False, "error": "Habit not found"}), 404
 
 @app.route("/api/stats")
 def get_stats():
-    """Get task statistics for dashboard"""
+    """Get task statistics for dashboard."""
     data = load_tasks()
     tasks = data["tasks"]
-    
+
     stats = {
         "total": len(tasks),
         "todo": len([t for t in tasks if t["status"] == "To Do"]),
         "in_progress": len([t for t in tasks if t["status"] == "In Progress"]),
         "done": len([t for t in tasks if t["status"] == "Done"]),
         "high_priority": len([t for t in tasks if t["priority"] == "High"]),
-        "overdue": 0
+        "blocked": len([t for t in tasks if task_blockers(t, {task["id"]: task for task in tasks})]),
+        "overdue": 0,
     }
-    
-    # Calculate overdue tasks
+
     today = datetime.now().date()
     for task in tasks:
-        if task["due_date"] and task["status"] != "Done":
-            due = datetime.fromisoformat(task["due_date"]).date()
-            if due < today:
-                stats["overdue"] += 1
-    
+        due = parse_date(task.get("due_date"))
+        if due and task["status"] != "Done" and due < today:
+            stats["overdue"] += 1
+
     return jsonify(stats)
+
 
 # ==================== AI Agent Endpoints ====================
 
 @app.route("/api/agent/chat", methods=["POST"])
 def agent_chat():
-    """Process a chat message through the AI agent"""
+    """Process a chat message through the AI agent."""
     data = load_tasks()
-    message = request.json.get("message", "")
-    
+    message = (request.json or {}).get("message", "")
+
     if not message.strip():
         return jsonify({"error": "Message is required"}), 400
-    
+
     result = agent.chat(message, data["tasks"])
     return jsonify(result)
 
+
 @app.route("/api/agent/parse-task", methods=["POST"])
 def parse_task():
-    """Parse natural language into task data"""
-    text = request.json.get("text", "")
-    
+    """Parse natural language into task data."""
+    text = (request.json or {}).get("text", "")
+
     if not text.strip():
         return jsonify({"error": "Text is required"}), 400
-    
+
     task_data = agent.parse_task_with_ai(text) if agent.client else agent.parse_task_from_text(text)
     return jsonify(task_data)
 
+
 @app.route("/api/agent/breakdown", methods=["POST"])
 def breakdown_task():
-    """Break down a task into subtasks"""
-    title = request.json.get("title", "")
-    description = request.json.get("description", "")
-    
+    """Break down a task into subtasks."""
+    payload = request.json or {}
+    title = payload.get("title", "")
+    description = payload.get("description", "")
+
     if not title.strip():
         return jsonify({"error": "Task title is required"}), 400
-    
+
     subtasks = agent.break_down_task_with_ai(title, description)
     return jsonify({"subtasks": subtasks})
 
+
 @app.route("/api/agent/plan-day", methods=["GET"])
 def plan_day():
-    """Get a daily plan based on current tasks"""
+    """Get a daily plan based on current tasks."""
     data = load_tasks()
     plan = agent.plan_day(data["tasks"])
     return jsonify(plan)
 
+
 @app.route("/api/agent/insights", methods=["GET"])
 def get_insights():
-    """Get productivity insights"""
+    """Get productivity insights."""
     data = load_tasks()
     insights = agent.get_productivity_insights(data["tasks"])
     return jsonify(insights)
 
+
 @app.route("/api/agent/create-from-chat", methods=["POST"])
 def create_task_from_chat():
-    """Create a task from AI-parsed data"""
+    """Create a task from AI-parsed data."""
     data = load_tasks()
-    task_data = request.json
-    
+    task_data = request.json or {}
+
     new_task = get_default_task()
-    new_task["title"] = task_data.get("title", "Untitled Task")
-    new_task["description"] = task_data.get("description", "")
-    new_task["status"] = task_data.get("status", "To Do")
-    new_task["priority"] = task_data.get("priority", "Medium")
-    new_task["due_date"] = task_data.get("due_date", "")
-    new_task["tags"] = task_data.get("tags", [])
-    new_task["assigned_to"] = task_data.get("assigned_to", "")
-    new_task["estimate_minutes"] = task_data.get("estimate_minutes", 30)
-    new_task["scheduled_start"] = task_data.get("scheduled_start", "")
-    new_task["scheduled_end"] = task_data.get("scheduled_end", "")
-    
+    apply_task_payload(new_task, task_data)
     data["tasks"].append(new_task)
+    record_activity(data, "task_created_from_chat", new_task, "Created by AI chat")
     save_tasks(data)
-    
+
     return jsonify({"success": True, "task": new_task})
+
 
 @app.route("/api/agent/create-subtasks", methods=["POST"])
 def create_subtasks():
-    """Create multiple subtasks at once"""
+    """Create multiple subtasks at once."""
     data = load_tasks()
-    subtasks = request.json.get("subtasks", [])
-    parent_tag = request.json.get("parent_tag", "")
-    
+    payload = request.json or {}
+    subtasks = payload.get("subtasks", [])
+    parent_tag = payload.get("parent_tag", "")
+
     created_tasks = []
     for subtask in subtasks:
         new_task = get_default_task()
         new_task["title"] = subtask.get("title", "Subtask")
         new_task["priority"] = subtask.get("priority", "Medium")
         new_task["tags"] = [parent_tag] if parent_tag else []
-        
+
         data["tasks"].append(new_task)
         created_tasks.append(new_task)
-    
+        record_activity(data, "subtask_created", new_task, parent_tag)
+
     save_tasks(data)
     return jsonify({"success": True, "tasks": created_tasks})
 
+
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    import uvicorn
+
+    uvicorn.run("app:asgi_app", host="127.0.0.1", port=5000, reload=True)
