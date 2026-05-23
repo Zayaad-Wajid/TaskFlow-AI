@@ -9,22 +9,23 @@ from datetime import datetime, timedelta
 from typing import Optional
 import os
 
-# Try to import OpenAI - will be used if API key is set
+# Try to import Gemini - rule-based fallbacks still work without it
 try:
-    from openai import OpenAI
-    OPENAI_AVAILABLE = True
+    from google import genai
+    GEMINI_AVAILABLE = True
 except ImportError:
-    OPENAI_AVAILABLE = False
+    GEMINI_AVAILABLE = False
 
 class TaskAgent:
     """AI Agent for task management operations"""
     
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         self.client = None
+        self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
         
-        if OPENAI_AVAILABLE and self.api_key:
-            self.client = OpenAI(api_key=self.api_key)
+        if GEMINI_AVAILABLE and self.api_key:
+            self.client = genai.Client(api_key=self.api_key)
         
         # Define available tools/functions for the agent
         self.tools = [
@@ -249,32 +250,36 @@ class TaskAgent:
         
         return result
     
+    def _extract_json_object(self, text: str) -> dict:
+        """Extract JSON from a Gemini response, including fenced code blocks."""
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?", "", cleaned, flags=re.IGNORECASE).strip()
+            cleaned = re.sub(r"```$", "", cleaned).strip()
+        match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        if match:
+            cleaned = match.group(0)
+        return json.loads(cleaned)
+
     def parse_task_with_ai(self, text: str) -> dict:
-        """Parse a task using OpenAI API for better understanding"""
+        """Parse a task using Gemini API for better understanding."""
         if not self.client:
             return self.parse_task_from_text(text)
         
         try:
             today = datetime.now().strftime("%Y-%m-%d")
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": f"""You are a task parsing assistant. Extract task details from user input.
-                        Today's date is {today}. Parse dates relative to today.
-                        Always respond with a JSON object containing: title, description, priority (Low/Medium/High), due_date (YYYY-MM-DD or empty), tags (array)."""
-                    },
-                    {
-                        "role": "user",
-                        "content": text
-                    }
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=200
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=f"""You are a task parsing assistant. Extract task details from user input.
+Today's date is {today}. Parse dates relative to today.
+Return only valid JSON with these keys: title, description, priority, due_date, tags.
+priority must be Low, Medium, or High. due_date must be YYYY-MM-DD or an empty string.
+
+User input: {text}""",
+                config={"response_mime_type": "application/json"},
             )
             
-            result = json.loads(response.choices[0].message.content)
+            result = self._extract_json_object(response.text)
             return {
                 "title": result.get("title", text),
                 "description": result.get("description", ""),
@@ -284,7 +289,7 @@ class TaskAgent:
                 "status": "To Do"
             }
         except Exception as e:
-            print(f"AI parsing error: {e}")
+            print(f"Gemini parsing error: {e}")
             return self.parse_task_from_text(text)
     
     def break_down_task_with_ai(self, task_title: str, task_description: str = "") -> list:
@@ -293,27 +298,20 @@ class TaskAgent:
             return self._simple_breakdown(task_title)
         
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """You are a project planning assistant. Break down complex tasks into 3-6 actionable subtasks.
-                        Respond with a JSON object containing: subtasks (array of objects with title and priority)."""
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Break down this task: {task_title}\n{task_description}"
-                    }
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=300
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=f"""You are a project planning assistant. Break down complex tasks into 3-6 actionable subtasks.
+Return only valid JSON with this shape: {{"subtasks": [{{"title": "...", "priority": "Low|Medium|High"}}]}}.
+
+Task: {task_title}
+Description: {task_description}""",
+                config={"response_mime_type": "application/json"},
             )
             
-            result = json.loads(response.choices[0].message.content)
+            result = self._extract_json_object(response.text)
             return result.get("subtasks", self._simple_breakdown(task_title))
         except Exception as e:
-            print(f"AI breakdown error: {e}")
+            print(f"Gemini breakdown error: {e}")
             return self._simple_breakdown(task_title)
     
     def _simple_breakdown(self, task_title: str) -> list:
@@ -513,6 +511,10 @@ class TaskAgent:
             score += 5
             reasons.append(f"assigned to {task['assigned_to']}")
 
+        if task.get("dependency_ids"):
+            score -= 20
+            reasons.append("has blocker dependencies")
+
         return score, reasons or ["backlog task"]
 
     def prioritize_tasks(self, tasks: list) -> dict:
@@ -528,6 +530,7 @@ class TaskAgent:
                 "priority": task.get("priority", "Medium"),
                 "due_date": task.get("due_date", ""),
                 "assigned_to": task.get("assigned_to", ""),
+                "is_blocked": bool(task.get("dependency_ids")),
                 "score": score,
                 "reasons": reasons,
             })
@@ -583,6 +586,134 @@ class TaskAgent:
         return {
             "blocks": blocks,
             "summary": f"Scheduled {len(blocks)} priority task(s) with short buffers between focus blocks.",
+        }
+
+    def daily_summary(self, tasks: list, activity_feed: Optional[list] = None) -> dict:
+        """Create an end-of-day recap and next-day plan."""
+        today = datetime.now().date()
+        tomorrow = today + timedelta(days=1)
+        activity_feed = activity_feed or []
+
+        completed_today = []
+        active_tasks = []
+        due_tomorrow = []
+        focus_minutes = 0
+
+        for task in tasks:
+            if task.get("completed_at"):
+                try:
+                    completed_at = datetime.fromisoformat(task["completed_at"]).date()
+                    if completed_at == today:
+                        completed_today.append(task)
+                except ValueError:
+                    pass
+
+            if task.get("status") != "Done":
+                active_tasks.append(task)
+                if task.get("due_date"):
+                    try:
+                        due = datetime.fromisoformat(task["due_date"]).date()
+                        if due == tomorrow:
+                            due_tomorrow.append(task)
+                    except ValueError:
+                        pass
+
+            for log in task.get("time_logs", []):
+                try:
+                    created = datetime.fromisoformat(log.get("created_at", "")).date()
+                except ValueError:
+                    created = None
+                if created == today:
+                    focus_minutes += int(log.get("minutes") or 0)
+
+        ranked = self.prioritize_tasks(active_tasks)["prioritized_tasks"][:5]
+        recent_activity = [
+            item for item in activity_feed
+            if str(item.get("created_at", "")).startswith(today.isoformat())
+        ][:8]
+
+        if completed_today:
+            recap = f"Completed {len(completed_today)} task(s) today with {focus_minutes} logged focus minute(s)."
+        else:
+            recap = f"No tasks were completed today yet, with {focus_minutes} logged focus minute(s)."
+
+        if due_tomorrow:
+            next_day = f"Start tomorrow with {len(due_tomorrow)} task(s) due, then move through the top priorities."
+        else:
+            next_day = "Tomorrow's plan is based on the highest priority active tasks and open blockers."
+
+        return {
+            "recap": recap,
+            "next_day_plan": next_day,
+            "completed_today": [
+                {"task_id": task.get("id"), "title": task.get("title", "Untitled Task")}
+                for task in completed_today
+            ],
+            "top_priorities": ranked,
+            "due_tomorrow": [
+                {"task_id": task.get("id"), "title": task.get("title", "Untitled Task")}
+                for task in due_tomorrow
+            ],
+            "focus_minutes": focus_minutes,
+            "activity": recent_activity,
+        }
+
+    def workload_forecast(self, tasks: list, weekly_capacity_minutes: int = 1800) -> dict:
+        """Estimate this week's capacity and flag overload from estimates and due dates."""
+        today = datetime.now().date()
+        week_start = today - timedelta(days=today.weekday())
+        buckets = []
+        total_minutes = 0
+
+        for day_offset in range(7):
+            day = week_start + timedelta(days=day_offset)
+            day_tasks = []
+            day_minutes = 0
+            for task in tasks:
+                if task.get("status") == "Done":
+                    continue
+                due_date = task.get("due_date")
+                if not due_date:
+                    continue
+                try:
+                    due = datetime.fromisoformat(due_date).date()
+                except ValueError:
+                    continue
+                if due == day:
+                    estimate = task.get("estimate_minutes") or 30
+                    try:
+                        estimate = int(estimate)
+                    except (TypeError, ValueError):
+                        estimate = 30
+                    day_minutes += estimate
+                    day_tasks.append({
+                        "task_id": task.get("id"),
+                        "title": task.get("title", "Untitled Task"),
+                        "estimate_minutes": estimate,
+                        "priority": task.get("priority", "Medium"),
+                    })
+            total_minutes += day_minutes
+            buckets.append({
+                "date": day.isoformat(),
+                "estimate_minutes": day_minutes,
+                "tasks": day_tasks,
+                "over_capacity": day_minutes > max(weekly_capacity_minutes / 5, 1),
+            })
+
+        overload = total_minutes > weekly_capacity_minutes
+        utilization = (total_minutes / weekly_capacity_minutes * 100) if weekly_capacity_minutes else 0
+        return {
+            "week_start": week_start.isoformat(),
+            "weekly_capacity_minutes": weekly_capacity_minutes,
+            "scheduled_estimate_minutes": total_minutes,
+            "utilization_percent": round(utilization, 1),
+            "overload": overload,
+            "message": (
+                "Workload is over weekly capacity. Consider rescheduling, delegating, or reducing scope."
+                if overload
+                else "Workload is within the configured weekly capacity."
+            ),
+            "days": buckets,
         }
 
     def chat(self, message: str, tasks: list) -> dict:

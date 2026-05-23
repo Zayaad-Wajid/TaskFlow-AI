@@ -1,6 +1,6 @@
 # TaskFlow - Task Manager
 
-A modern, ClickUp-inspired task management application built with React, Tailwind CSS, and Flask.
+A modern, ClickUp-inspired task management application built with React, Tailwind CSS, and a Flask API served by Uvicorn.
 
 ![TaskFlow Screenshot](screenshot.png)
 
@@ -22,6 +22,14 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
 - **Offline Mode** - Cached tasks and stats remain available when the backend/network is unavailable
 - **Pomodoro Timer** - Built-in focus timer for 25-minute work sessions
 - **Habit Tracking** - Create daily habits, mark today complete, and track streaks
+- **Recurring Tasks** - Daily and weekly task series auto-clone from the next due date
+- **Task Dependencies** - Link blocker tasks and surface blocked indicators on cards
+- **Time Tracking** - Log manual or Pomodoro focus sessions per task
+- **Task Templates** - Save repeatable task shapes with title, tags, priority, subtasks, and estimates
+- **Smart Reminders** - Due-date notifications with reminder time and snooze support
+- **Activity Feed** - Audit trail for task edits, status changes, comments, schedules, and integrations
+- **Attachments** - Store task file links or cloud-provider URLs
+- **Calendar and Slack Integrations** - Placeholder sync/notification endpoints ready for provider credentials
 
 ### AI Assistant
 - **Natural Language Task Creation** - Create tasks by typing naturally (e.g., "Create a task to review the report by Friday, high priority")
@@ -31,7 +39,13 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
 - **Productivity Insights** - Analytics on completion rates, overdue tasks, and personalized tips
 - **AI Task Prioritization** - Rank active work by priority, urgency, progress, and ownership
 - **AI Scheduling Assistant** - Generate time-blocked schedules from active tasks and estimates
+- **AI Daily Summary** - End-of-day recap, focus totals, and next-day plan
+- **Workload Forecasting** - Weekly capacity forecast from due dates and task estimates
 - **Chat Interface** - Floating AI assistant accessible from any view
+
+### Storage and Migration
+
+TaskFlow still uses `tasks_data.json`. The backend loader normalizes older files in memory and backfills new fields such as `dependency_ids`, `recurring`, `time_logs`, `reminder`, `attachments`, `task_templates`, `activity_feed`, `integrations`, and `settings` before saving. No manual migration step is required.
 
 ## Tech Stack
 
@@ -46,15 +60,15 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
 
 ### Backend
 
-- **Flask** - Python web framework
+- **Flask + Uvicorn** - API backend served through an ASGI wrapper
 - **Flask-CORS** - Cross-origin resource sharing
-- **OpenAI** (optional) - Enhanced AI-powered task parsing and insights
+- **Gemini** (optional) - Enhanced AI-powered task parsing and insights
 
 ## Project Structure
 
 ```
 TaskFlow/
-├── app.py                    # Flask backend API
+├── app.py                    # Flask backend API with ASGI/Uvicorn entrypoint
 ├── agent.py                  # AI agent module
 ├── requirements.txt          # Python dependencies
 ├── tasks_data.json           # Task data storage
@@ -111,13 +125,19 @@ TaskFlow/
 
 ### Running the Application
 
-1. **Start the Flask backend** (in one terminal)
+1. **Start the backend** (in one terminal)
 
    ```bash
    python app.py
    ```
 
-   The API will run on http://localhost:5000
+   Or run Uvicorn directly:
+
+   ```bash
+   uvicorn app:asgi_app --reload --host 127.0.0.1 --port 5000
+   ```
+
+   The API will run on http://localhost:5000. Visiting that URL returns backend status JSON; the React UI runs from the frontend dev server.
 
 2. **Start the React frontend** (in another terminal)
    ```bash
@@ -138,6 +158,13 @@ TaskFlow/
 | DELETE | `/api/tasks/:id`        | Delete a task       |
 | PATCH  | `/api/tasks/:id/status` | Update task status  |
 | POST   | `/api/tasks/:id/comments` | Add a collaboration comment |
+| PUT    | `/api/tasks/:id/dependencies` | Replace blocker dependencies |
+| POST   | `/api/tasks/:id/time-logs` | Log focus time for a task |
+| POST   | `/api/tasks/:id/attachments` | Add a task attachment URL |
+| DELETE | `/api/tasks/:id/attachments/:attachment_id` | Remove a task attachment |
+| PATCH  | `/api/tasks/:id/reminder/snooze` | Snooze a task reminder |
+| GET    | `/api/reminders/due`     | Get due-date and reminder notifications |
+| GET    | `/api/activity`          | Get recent activity feed entries |
 | GET    | `/api/stats`            | Get task statistics |
 
 ### AI Agent
@@ -152,8 +179,24 @@ TaskFlow/
 | GET    | `/api/agent/prioritize`       | Get AI-ranked task priorities        |
 | GET    | `/api/agent/schedule`         | Get AI-generated time blocks         |
 | POST   | `/api/agent/apply-schedule`   | Save suggested time blocks to tasks  |
+| GET    | `/api/agent/daily-summary`    | Get end-of-day recap and next-day plan |
+| GET    | `/api/agent/workload-forecast` | Get weekly capacity forecast        |
 | POST   | `/api/agent/create-from-chat` | Create task from parsed data         |
 | POST   | `/api/agent/create-subtasks`  | Create multiple subtasks for a task  |
+
+### Templates and Integrations
+
+| Method | Endpoint                              | Description                    |
+| ------ | ------------------------------------- | ------------------------------ |
+| GET    | `/api/templates`                      | Get task templates             |
+| POST   | `/api/templates`                      | Create a task template         |
+| PUT    | `/api/templates/:id`                  | Update a task template         |
+| DELETE | `/api/templates/:id`                  | Delete a task template         |
+| POST   | `/api/templates/:id/create-task`      | Create a task from a template  |
+| GET    | `/api/integrations`                   | Get integration settings       |
+| PUT    | `/api/integrations`                   | Update integration settings    |
+| POST   | `/api/integrations/google-calendar/sync` | Prepare calendar sync events |
+| POST   | `/api/integrations/slack/notify`      | Record/send Slack notification |
 
 ### Habits
 
@@ -191,14 +234,14 @@ TaskFlow/
 3. Use **Quick Actions**:
    - **Plan my day** - Get a prioritized list of today's tasks
    - **Insights** - View productivity analytics and tips
-4. Open the **Productivity** view to use AI priorities, AI scheduling, Pomodoro, habits, and team collaboration panels
+4. Open the **Productivity** view to use AI priorities, AI scheduling, Pomodoro, habits, templates, dependencies, reminders, attachments, integrations, activity, summaries, and workload forecasting
 5. Confirm task creation when the AI parses your request
 
 ### AI Modes
 
 The AI assistant works in two modes:
 
-- **With OpenAI API Key**: Set the `OPENAI_API_KEY` environment variable for full AI-powered natural language understanding
+- **With Gemini API Key**: Set the `GEMINI_API_KEY` environment variable for AI-powered natural language understanding. You can optionally set `GEMINI_MODEL`; the default is `gemini-2.0-flash`.
 - **Without API Key**: Uses intelligent rule-based parsing (works well for common task creation patterns)
 
 ## Contributing
@@ -215,4 +258,4 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ---
 
-Built with ❤️ using React and Flask
+Built with React, Flask, Uvicorn, and Gemini
