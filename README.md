@@ -17,7 +17,7 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
   - Tags
 - **Search & Filter** - Find tasks quickly with search and priority filters
 - **Real-time Stats** - Dashboard showing task counts and overdue items
-- **Clean UI** - Light, focused interface with calm spacing and friendly interactions
+- **Clean UI** - Calm darker interface with focused spacing and friendly interactions
 - **Team Collaboration** - Assign tasks to teammates and keep lightweight task comments
 - **Offline Mode** - Cached tasks and stats remain available when the backend/network is unavailable
 - **Pomodoro Timer** - Built-in focus timer for 25-minute work sessions

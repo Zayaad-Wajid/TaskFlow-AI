@@ -34,8 +34,8 @@ const formatMinutes = (minutes = 0) => {
   return `${hours}h ${mins}m`;
 };
 
-const panelClass = "rounded-lg border border-slate-200 bg-white p-5 shadow-sm";
-const softButtonClass = "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-cyan-300 hover:text-cyan-700 hover:shadow-sm";
+const panelClass = "rounded-lg border border-slate-800 bg-slate-900/70 p-5 shadow-sm";
+const softButtonClass = "rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-cyan-400/50 hover:text-cyan-200 hover:shadow-sm";
 
 const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
   const [priorities, setPriorities] = useState([]);
@@ -152,14 +152,14 @@ const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-50 p-6">
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="mb-2 inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-sm font-medium text-cyan-700">
+          <p className="mb-2 inline-flex items-center gap-2 rounded-full bg-cyan-400/10 px-3 py-1 text-sm font-medium text-cyan-200 ring-1 ring-cyan-400/20">
             <Sparkles className="h-4 w-4" />
             Focus workspace
           </p>
-          <h1 className="text-2xl font-semibold text-slate-950">Plan the work, then move through it calmly.</h1>
+          <h1 className="text-2xl font-semibold text-white">Plan the work, then move through it calmly.</h1>
         </div>
         <button onClick={loadPanels} className={softButtonClass}>
           Refresh insights
@@ -169,28 +169,28 @@ const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_0.9fr]">
         <section className={panelClass}>
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-base font-semibold text-slate-950">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-white">
               <Brain className="h-5 w-5 text-cyan-600" /> Smart priorities
             </h2>
           </div>
           <div className="space-y-3">
             {priorities.length === 0 ? (
-              <p className="text-sm text-slate-500">No active tasks to prioritize.</p>
+              <p className="text-sm text-slate-400">No active tasks to prioritize.</p>
             ) : (
               priorities.slice(0, 5).map((item, index) => (
                 <button
                   key={item.task_id}
                   onClick={() => onEditTask(tasks.find((task) => task.id === item.task_id))}
-                  className="group w-full rounded-lg border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-cyan-300 hover:bg-cyan-50/50"
+                  className="group w-full rounded-lg border border-slate-800 bg-slate-950/70 p-4 text-left transition hover:border-cyan-400/50 hover:bg-cyan-400/5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-medium text-slate-950">
+                      <p className="font-medium text-slate-100">
                         {index + 1}. {item.title}
                       </p>
-                      <p className="mt-1 text-xs text-slate-500">{item.reasons.join(" | ")}</p>
+                      <p className="mt-1 text-xs text-slate-400">{item.reasons.join(" | ")}</p>
                     </div>
-                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-cyan-700 ring-1 ring-cyan-100">
+                    <span className="rounded-full bg-cyan-400/10 px-2.5 py-1 text-xs font-medium text-cyan-200 ring-1 ring-cyan-400/20">
                       {item.score}
                     </span>
                   </div>
@@ -202,7 +202,7 @@ const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
 
         <section className={panelClass}>
           <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="flex items-center gap-2 text-base font-semibold text-slate-950">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-white">
               <CalendarClock className="h-5 w-5 text-emerald-600" /> Suggested schedule
             </h2>
             <button onClick={applySchedule} disabled={schedule.length === 0} className={`${softButtonClass} disabled:opacity-50`}>
@@ -211,17 +211,17 @@ const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
           </div>
           <div className="space-y-3">
             {schedule.length === 0 ? (
-              <p className="text-sm text-slate-500">No suggested blocks available.</p>
+              <p className="text-sm text-slate-400">No suggested blocks available.</p>
             ) : (
               schedule.map((block) => (
-                <div key={`${block.task_id}-${block.start}`} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div key={`${block.task_id}-${block.start}`} className="rounded-lg border border-slate-800 bg-slate-950/70 p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="font-medium text-slate-950">{block.title}</p>
-                    <span className="text-sm font-medium text-emerald-700">
+                    <p className="font-medium text-slate-100">{block.title}</p>
+                    <span className="text-sm font-medium text-emerald-300">
                       {formatTime(block.start)} - {formatTime(block.end)}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">{block.reason}</p>
+                  <p className="mt-1 text-xs text-slate-400">{block.reason}</p>
                 </div>
               ))
             )}
@@ -231,13 +231,13 @@ const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
 
       <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-3">
         <section className={panelClass}>
-          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-slate-950">
+          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-white">
             <Play className="h-5 w-5 text-rose-600" /> Focus timer
           </h2>
           <select
             value={selectedTask?.id || ""}
             onChange={(event) => setSelectedTaskId(event.target.value)}
-            className="mb-4 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100"
+            className="mb-4 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/10"
           >
             {tasks.map((task) => (
               <option key={task.id} value={task.id}>
@@ -245,8 +245,8 @@ const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
               </option>
             ))}
           </select>
-          <div className="rounded-lg bg-rose-50 p-5 text-center">
-            <div className="mb-5 text-5xl font-semibold tabular-nums text-rose-700">{timerLabel}</div>
+          <div className="rounded-lg bg-rose-400/10 p-5 text-center ring-1 ring-rose-400/10">
+            <div className="mb-5 text-5xl font-semibold tabular-nums text-rose-200">{timerLabel}</div>
             <div className="flex justify-center gap-2">
               <button
                 onClick={() => setIsTimerRunning(!isTimerRunning)}
@@ -267,14 +267,14 @@ const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
             </div>
           </div>
           {selectedTask && (
-            <p className="mt-3 text-xs text-slate-500">
+            <p className="mt-3 text-xs text-slate-400">
               Logging to {selectedTask.title}. Total: {formatMinutes(selectedTask.focus_minutes || 0)}.
             </p>
           )}
         </section>
 
         <section className={panelClass}>
-          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-slate-950">
+          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-white">
             <Flame className="h-5 w-5 text-orange-500" /> Habits
           </h2>
           <form onSubmit={addHabit} className="mb-4 flex gap-2">
@@ -282,7 +282,7 @@ const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
               value={newHabit}
               onChange={(event) => setNewHabit(event.target.value)}
               placeholder="Add a daily habit"
-              className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100"
+              className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/10"
             />
             <button className="rounded-lg bg-cyan-600 px-3 py-2 text-white transition hover:bg-cyan-700">
               <Plus className="h-4 w-4" />
@@ -292,16 +292,16 @@ const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
             {habits.map((habit) => {
               const completedToday = habit.completed_dates?.includes(today);
               return (
-                <div key={habit.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div key={habit.id} className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
                   <button
                     onClick={() => toggleHabit(habit.id)}
-                    className={`rounded-lg p-1.5 transition ${completedToday ? "bg-emerald-600 text-white" : "bg-white text-slate-400 ring-1 ring-slate-200 hover:text-emerald-600"}`}
+                    className={`rounded-lg p-1.5 transition ${completedToday ? "bg-emerald-600 text-white" : "bg-slate-900 text-slate-400 ring-1 ring-slate-700 hover:text-emerald-300"}`}
                   >
                     <Check className="h-4 w-4" />
                   </button>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-950">{habit.name}</p>
-                    <p className="text-xs text-slate-500">{habit.streak || 0} day streak</p>
+                    <p className="truncate text-sm font-medium text-slate-100">{habit.name}</p>
+                    <p className="text-xs text-slate-400">{habit.streak || 0} day streak</p>
                   </div>
                   <button onClick={() => deleteHabit(habit.id)} className="text-slate-400 transition hover:text-red-500">
                     <Trash2 className="h-4 w-4" />
@@ -309,30 +309,30 @@ const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
                 </div>
               );
             })}
-            {habits.length === 0 && <p className="text-sm text-slate-500">Start with one habit you can repeat.</p>}
+            {habits.length === 0 && <p className="text-sm text-slate-400">Start with one habit you can repeat.</p>}
           </div>
         </section>
 
         <section className={panelClass}>
-          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-slate-950">
+          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-white">
             <Timer className="h-5 w-5 text-cyan-600" /> Daily summary
           </h2>
           <div className="space-y-3">
-            <div className="rounded-lg bg-cyan-50 p-4">
-              <p className="text-sm font-medium text-slate-950">{dailySummary?.recap || "Summary loading..."}</p>
-              <p className="mt-2 text-sm text-slate-600">{dailySummary?.next_day_plan}</p>
+            <div className="rounded-lg bg-cyan-400/10 p-4 ring-1 ring-cyan-400/10">
+              <p className="text-sm font-medium text-slate-100">{dailySummary?.recap || "Summary loading..."}</p>
+              <p className="mt-2 text-sm text-slate-300">{dailySummary?.next_day_plan}</p>
             </div>
-            <div className="rounded-lg border border-slate-200 p-4">
+            <div className="rounded-lg border border-slate-800 p-4">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium text-slate-950">Weekly load</p>
-                <span className={`text-sm font-semibold ${forecast?.overload ? "text-red-600" : "text-emerald-600"}`}>
+                <p className="text-sm font-medium text-slate-100">Weekly load</p>
+                <span className={`text-sm font-semibold ${forecast?.overload ? "text-red-300" : "text-emerald-300"}`}>
                   {forecast?.utilization_percent || 0}%
                 </span>
               </div>
-              <p className="mt-2 text-sm text-slate-500">{forecast?.message}</p>
+              <p className="mt-2 text-sm text-slate-400">{forecast?.message}</p>
               <div className="mt-4 grid grid-cols-7 gap-1">
                 {forecast?.days?.map((day) => (
-                  <div key={day.date} className={`h-14 rounded-md p-1 text-[10px] ${day.over_capacity ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-500"}`}>
+                  <div key={day.date} className={`h-14 rounded-md p-1 text-[10px] ${day.over_capacity ? "bg-red-400/10 text-red-300" : "bg-slate-800 text-slate-400"}`}>
                     <p>{day.date.slice(5)}</p>
                     <p>{formatMinutes(day.estimate_minutes)}</p>
                   </div>
@@ -344,26 +344,26 @@ const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
       </div>
 
       <section className={`${panelClass} mt-5`}>
-        <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-slate-950">
+        <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-white">
           <Users className="h-5 w-5 text-emerald-600" /> Team notes
         </h2>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           {(collaborationTasks.length ? collaborationTasks : tasks.slice(0, 4)).map((task) => (
-            <div key={task.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div key={task.id} className="rounded-lg border border-slate-800 bg-slate-950/70 p-4">
               <div className="mb-3 flex items-start justify-between gap-2">
                 <div>
-                  <p className="font-medium text-slate-950">{task.title}</p>
-                  <p className="text-xs text-slate-500">Owner: {task.assigned_to || "Unassigned"}</p>
+                  <p className="font-medium text-slate-100">{task.title}</p>
+                  <p className="text-xs text-slate-400">Owner: {task.assigned_to || "Unassigned"}</p>
                 </div>
-                <button onClick={() => onEditTask(task)} className="text-sm font-medium text-cyan-700 hover:text-cyan-800">
+                <button onClick={() => onEditTask(task)} className="text-sm font-medium text-cyan-300 hover:text-cyan-200">
                   Edit
                 </button>
               </div>
               <div className="space-y-2">
                 {task.comments?.slice(-2).map((comment) => (
-                  <p key={comment.id} className="rounded-lg bg-white p-2 text-xs text-slate-600 ring-1 ring-slate-200">
+                  <p key={comment.id} className="rounded-lg bg-slate-900 p-2 text-xs text-slate-300 ring-1 ring-slate-800">
                     <MessageSquare className="mr-1 inline h-3 w-3 text-slate-400" />
-                    <span className="font-medium text-slate-700">{comment.author}:</span> {comment.text}
+                    <span className="font-medium text-slate-200">{comment.author}:</span> {comment.text}
                   </p>
                 ))}
                 <div className="flex gap-2">
@@ -371,7 +371,7 @@ const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
                     value={commentText[task.id] || ""}
                     onChange={(event) => setCommentText({ ...commentText, [task.id]: event.target.value })}
                     placeholder="Add a quick note"
-                    className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100"
+                    className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/10"
                   />
                   <button onClick={() => addComment(task.id)} className="rounded-lg bg-emerald-600 px-3 py-2 text-white transition hover:bg-emerald-700">
                     <Send className="h-4 w-4" />
@@ -380,7 +380,7 @@ const ProductivityView = ({ tasks, onRefresh, onEditTask, showToast }) => {
               </div>
             </div>
           ))}
-          {tasks.length === 0 && <p className="text-sm text-slate-500">Add tasks to collaborate with your team.</p>}
+          {tasks.length === 0 && <p className="text-sm text-slate-400">Add tasks to collaborate with your team.</p>}
         </div>
       </section>
     </div>

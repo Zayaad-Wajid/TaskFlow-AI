@@ -2,7 +2,7 @@ import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 const fieldClass =
-  "w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-slate-900 transition placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-4 focus:ring-cyan-100";
+  "w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 transition placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-4 focus:ring-cyan-400/10";
 
 const emptyForm = (defaultStatus = "To Do") => ({
   title: "",
@@ -82,18 +82,18 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-lg bg-white shadow-2xl animate-in fade-in zoom-in duration-200">
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-lg border border-slate-800 bg-slate-900 shadow-2xl animate-in fade-in zoom-in duration-200">
+        <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-950">
+            <h2 className="text-lg font-semibold text-white">
               {task ? "Edit task" : "Add task"}
             </h2>
-            <p className="text-sm text-slate-500">Keep the task clear enough to act on.</p>
+            <p className="text-sm text-slate-400">Keep the task clear enough to act on.</p>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>
@@ -101,7 +101,7 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
 
         <form onSubmit={handleSubmit} className="space-y-5 p-6">
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-600">Title</label>
+            <label className="mb-2 block text-sm font-medium text-slate-300">Title</label>
             <input
               type="text"
               value={formData.title}
@@ -113,7 +113,7 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-600">Description</label>
+            <label className="mb-2 block text-sm font-medium text-slate-300">Description</label>
             <textarea
               value={formData.description}
               onChange={(event) => setFormData({ ...formData, description: event.target.value })}
@@ -125,7 +125,7 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-600">Status</label>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Status</label>
               <select
                 value={formData.status}
                 onChange={(event) => setFormData({ ...formData, status: event.target.value })}
@@ -137,7 +137,7 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
               </select>
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-600">Priority</label>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Priority</label>
               <select
                 value={formData.priority}
                 onChange={(event) => setFormData({ ...formData, priority: event.target.value })}
@@ -152,7 +152,7 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-600">Due date</label>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Due date</label>
               <input
                 type="date"
                 value={formData.due_date}
@@ -161,7 +161,7 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
               />
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-600">Estimate</label>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Estimate</label>
               <input
                 type="number"
                 min="15"
@@ -172,7 +172,7 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
               />
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-600">Assignee</label>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Assignee</label>
               <input
                 type="text"
                 value={formData.assigned_to}
@@ -184,7 +184,7 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-600">Subtasks</label>
+            <label className="mb-2 block text-sm font-medium text-slate-300">Subtasks</label>
             <textarea
               value={formData.subtasks}
               onChange={(event) => setFormData({ ...formData, subtasks: event.target.value })}
@@ -194,8 +194,8 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-3">
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-800 bg-slate-950/70 p-4 md:grid-cols-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
               <input
                 type="checkbox"
                 checked={formData.recurring_enabled}
@@ -224,7 +224,7 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-600">Tags</label>
+            <label className="mb-2 block text-sm font-medium text-slate-300">Tags</label>
             <input
               type="text"
               value={formData.tags}
@@ -234,11 +234,11 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
             />
           </div>
 
-          <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+          <div className="flex justify-end gap-3 border-t border-slate-800 pt-4">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-slate-200 bg-white px-5 py-2.5 font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              className="rounded-lg border border-slate-700 bg-slate-950 px-5 py-2.5 font-medium text-slate-200 transition-colors hover:bg-slate-800"
             >
               Cancel
             </button>
