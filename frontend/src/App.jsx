@@ -155,7 +155,7 @@ function App() {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-950">
+    <div className="flex min-h-screen bg-slate-50">
       {/* Sidebar */}
       <Sidebar
         activeView={activeView}

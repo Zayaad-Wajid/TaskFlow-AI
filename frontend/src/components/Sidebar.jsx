@@ -16,37 +16,41 @@ const Sidebar = ({
 }) => {
   const navItems = [
     { id: "board", icon: LayoutDashboard, label: "Board" },
-    { id: "list", icon: List, label: "List View" },
+    { id: "list", icon: List, label: "List" },
     { id: "calendar", icon: Calendar, label: "Calendar" },
-    { id: "productivity", icon: Sparkles, label: "Productivity" },
+    { id: "productivity", icon: Sparkles, label: "Focus" },
   ];
 
   return (
-    <aside className="w-64 bg-slate-900 border-r border-slate-700 fixed h-screen flex flex-col z-50">
-      {/* Logo */}
-      <div className="p-6 border-b border-slate-700">
+    <aside className="fixed z-50 flex h-screen w-64 flex-col border-r border-slate-200 bg-white">
+      <div className="border-b border-slate-100 p-6">
         <div className="flex items-center gap-3">
-          <CheckCircle className="w-8 h-8 text-violet-500" />
-          <span className="text-xl font-bold text-violet-500">TaskFlow</span>
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700">
+            <CheckCircle className="h-6 w-6" />
+          </div>
+          <div>
+            <span className="block text-lg font-semibold text-slate-950">TaskFlow</span>
+            <span className="text-xs font-medium text-slate-500">AI workspace</span>
+          </div>
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="p-3">
         <ul className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
+            const isActive = activeView === item.id;
             return (
               <li key={item.id}>
                 <button
                   onClick={() => setActiveView(item.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                    activeView === item.id
-                      ? "bg-violet-600 text-white"
-                      : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                  className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition ${
+                    isActive
+                      ? "bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
                   }`}
                 >
-                  <Icon className="w-5 h-5" />
+                  <Icon className="h-5 w-5" />
                   <span>{item.label}</span>
                 </button>
               </li>
@@ -55,54 +59,43 @@ const Sidebar = ({
         </ul>
       </nav>
 
-      {/* Filters */}
-      <div className="px-6 py-4 border-t border-slate-700">
-        <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-3 flex items-center gap-2">
-          <Filter className="w-4 h-4" />
-          Filters
+      <div className="mx-4 mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <Filter className="h-4 w-4" />
+          Filter
         </h3>
-        <div className="space-y-3">
-          <div>
-            <label className="text-sm text-slate-400 block mb-2">
-              Priority
-            </label>
-            <select
-              value={priorityFilter}
-              onChange={(e) => setPriorityFilter(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-violet-500"
-            >
-              <option value="all">All</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
-          </div>
-        </div>
+        <select
+          value={priorityFilter}
+          onChange={(e) => setPriorityFilter(e.target.value)}
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100"
+        >
+          <option value="all">All priorities</option>
+          <option value="High">High</option>
+          <option value="Medium">Medium</option>
+          <option value="Low">Low</option>
+        </select>
       </div>
 
-      {/* Stats */}
-      <div className="mt-auto px-6 py-4 border-t border-slate-700">
-        <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-4">
+      <div className="mx-4 mt-auto mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
           Overview
         </h3>
         <div className="space-y-3">
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-slate-400">Total Tasks</span>
-            <span className="font-semibold text-white">{stats.total}</span>
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-500">Total</span>
+            <span className="font-semibold text-slate-950">{stats.total}</span>
           </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-slate-400">In Progress</span>
-            <span className="font-semibold text-amber-500">
-              {stats.in_progress}
-            </span>
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-500">In progress</span>
+            <span className="font-semibold text-amber-600">{stats.in_progress}</span>
           </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-slate-400">Completed</span>
-            <span className="font-semibold text-emerald-500">{stats.done}</span>
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-500">Completed</span>
+            <span className="font-semibold text-emerald-600">{stats.done}</span>
           </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-slate-400">Overdue</span>
-            <span className="font-semibold text-red-500">{stats.overdue}</span>
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-500">Overdue</span>
+            <span className="font-semibold text-red-600">{stats.overdue}</span>
           </div>
         </div>
       </div>
