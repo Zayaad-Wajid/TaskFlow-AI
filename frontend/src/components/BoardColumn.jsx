@@ -24,19 +24,21 @@ const BoardColumn = ({
   const config = statusConfig[status] || statusConfig["To Do"];
 
   return (
-    <div className="flex max-h-[calc(100vh-124px)] min-w-[320px] max-w-[320px] flex-col rounded-lg border border-slate-800 bg-slate-900/70">
+    <div className="flex max-h-[calc(100vh-124px)] min-w-[320px] max-w-[320px] flex-col rounded-xl border border-slate-200 bg-white/80 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
       {/* Column Header */}
-      <div className="flex items-center justify-between border-b border-slate-800 p-4">
+      <div className="flex items-center justify-between border-b border-slate-200 p-4 dark:border-slate-800">
         <div className="flex items-center gap-3">
           <span className={`w-2.5 h-2.5 rounded-full ${config.dot}`}></span>
-          <h2 className="font-semibold text-white">{status}</h2>
-          <span className="rounded-full bg-slate-950 px-2 py-0.5 text-xs font-medium text-slate-400 ring-1 ring-slate-800">
+          <h2 className="font-semibold text-slate-900 dark:text-white">
+            {status}
+          </h2>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:ring-slate-800">
             {tasks.length}
           </span>
         </div>
         <button
           onClick={() => onAddTask(status)}
-          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-cyan-300 hover:ring-1 hover:ring-cyan-400/20"
+          className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-cyan-700 hover:ring-1 hover:ring-cyan-400/20 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-cyan-300"
         >
           <Plus className="w-5 h-5" />
         </button>
@@ -62,7 +64,7 @@ const BoardColumn = ({
         </SortableContext>
 
         {tasks.length === 0 && (
-          <div className="text-center py-8 text-slate-500 text-sm">
+          <div className="py-8 text-center text-sm text-slate-500 dark:text-slate-500">
             No tasks yet
           </div>
         )}

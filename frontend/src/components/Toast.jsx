@@ -27,10 +27,10 @@ const Toast = ({ message, type = "success", isVisible, onClose }) => {
 
   return (
     <div
-      className={`fixed bottom-6 right-6 flex items-center gap-3 px-5 py-4 bg-slate-800 border ${borderColors[type]} rounded-xl shadow-2xl z-[300] animate-in slide-in-from-right duration-300`}
+      className={`fixed bottom-6 right-6 z-[300] flex items-center gap-3 rounded-xl border ${borderColors[type]} bg-white/95 px-5 py-4 text-slate-900 shadow-2xl backdrop-blur animate-in slide-in-from-right duration-300 dark:bg-slate-900/95 dark:text-white`}
     >
       {icons[type]}
-      <span className="text-sm text-white">{message}</span>
+      <span className="text-sm font-medium">{message}</span>
     </div>
   );
 };

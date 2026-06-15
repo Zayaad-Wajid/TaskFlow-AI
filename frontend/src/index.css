@@ -1,4 +1,51 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap");
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  font-family:
+    "Manrope",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+
+body {
+  min-height: 100vh;
+  color: #0f172a;
+  transition:
+    background-color 220ms ease,
+    color 220ms ease;
+  background-image:
+    radial-gradient(
+      circle at 10% 10%,
+      rgba(99, 102, 241, 0.15),
+      transparent 35%
+    ),
+    radial-gradient(
+      circle at 80% 90%,
+      rgba(16, 185, 129, 0.12),
+      transparent 30%
+    );
+}
+
+.dark body {
+  color: #f1f5f9;
+}
+
+* {
+  transition-property: color, background-color, border-color, box-shadow;
+  transition-duration: 180ms;
+}
+
+h1,
+h2,
+h3,
+.display-font {
+  font-family: "Space Grotesk", "Manrope", sans-serif;
+}
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
@@ -7,16 +54,24 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #1e293b;
+  background: #e2e8f0;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #475569;
+  background: #94a3b8;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: #64748b;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
 }
 
 /* Drag and drop styles */

@@ -10,6 +10,68 @@ import DeleteModal from "./components/DeleteModal";
 import Toast from "./components/Toast";
 import AIChat from "./components/AIChat";
 import ProductivityView from "./components/ProductivityView";
+import AuthView from "./components/AuthView";
+
+const AppShellSkeleton = ({ activeView }) => {
+  if (activeView === "list") {
+    return (
+      <div className="flex-1 p-4 sm:p-6">
+        <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+          <div className="mb-4 h-10 w-full animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />
+          <div className="space-y-3">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div
+                key={`list-skeleton-${index}`}
+                className="h-14 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800/80"
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (activeView === "calendar") {
+    return (
+      <div className="flex-1 p-4 sm:p-6">
+        <div className="mb-5 flex items-center justify-center gap-3">
+          <div className="h-9 w-9 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />
+          <div className="h-8 w-56 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />
+          <div className="h-9 w-9 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />
+        </div>
+        <div className="grid grid-cols-7 gap-2 rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+          {Array.from({ length: 42 }).map((_, index) => (
+            <div
+              key={`calendar-skeleton-${index}`}
+              className="h-24 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800/80"
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-1 gap-5 overflow-x-auto p-4 sm:p-6">
+      {Array.from({ length: 3 }).map((_, columnIndex) => (
+        <div
+          key={`board-skeleton-${columnIndex}`}
+          className="min-w-[300px] max-w-[300px] rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70"
+        >
+          <div className="mb-4 h-6 w-2/3 animate-pulse rounded-md bg-slate-200 dark:bg-slate-800" />
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, cardIndex) => (
+              <div
+                key={`board-card-skeleton-${columnIndex}-${cardIndex}`}
+                className="h-24 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800/80"
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 function App() {
   const [tasks, setTasks] = useState([]);
@@ -24,6 +86,17 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [theme, setTheme] = useState(() => {
+    const savedTheme = localStorage.getItem("taskflow-theme");
+    if (savedTheme === "dark" || savedTheme === "light") return savedTheme;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  });
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [currentUser, setCurrentUser] = useState(null);
 
   // Modal states
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -49,6 +122,7 @@ function App() {
 
   // Fetch tasks and stats
   const fetchData = useCallback(async () => {
+    setIsLoading(true);
     try {
       const [tasksData, statsData] = await Promise.all([
         api.getTasks(),
@@ -56,18 +130,47 @@ function App() {
       ]);
       setTasks(tasksData.tasks || []);
       setStats(statsData);
-      setIsOffline(Boolean(tasksData.offline || statsData.offline || !navigator.onLine));
+      setIsOffline(
+        Boolean(tasksData.offline || statsData.offline || !navigator.onLine),
+      );
     } catch (error) {
       console.error("Error fetching data:", error);
       showToast("Error fetching tasks", "error");
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    // Initial API/cache hydration for the app shell.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    const bootstrapAuth = async () => {
+      try {
+        const response = await api.me();
+        if (response?.success && response?.user) {
+          setCurrentUser(response.user);
+        }
+      } catch {
+        setCurrentUser(null);
+      } finally {
+        setIsAuthChecking(false);
+      }
+    };
+
+    bootstrapAuth();
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setTasks([]);
+      setIsLoading(false);
+      return;
+    }
     fetchData();
-  }, [fetchData]);
+  }, [currentUser, fetchData]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    localStorage.setItem("taskflow-theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     const goOnline = () => {
@@ -154,8 +257,36 @@ function App() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch {
+      // Clear local auth state even if the server session already expired.
+    }
+    setCurrentUser(null);
+    setIsSidebarOpen(false);
+  };
+
+  if (isAuthChecking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 dark:bg-slate-950">
+        <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm font-medium text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+          Preparing your workspace...
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <AuthView onAuthenticated={setCurrentUser} />;
+  }
+
   return (
-    <div className="flex min-h-screen bg-slate-950">
+    <div className="relative flex min-h-screen overflow-hidden bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      <div className="pointer-events-none absolute -top-36 -left-24 h-80 w-80 rounded-full bg-indigo-400/25 blur-3xl dark:bg-indigo-600/20" />
+      <div className="pointer-events-none absolute right-0 bottom-0 h-96 w-96 rounded-full bg-emerald-300/25 blur-3xl dark:bg-emerald-500/10" />
+      <div className="pointer-events-none absolute top-0 right-0 left-0 h-px bg-gradient-to-r from-transparent via-cyan-400/70 to-transparent dark:via-cyan-300/70" />
+
       {/* Sidebar */}
       <Sidebar
         activeView={activeView}
@@ -163,48 +294,65 @@ function App() {
         stats={stats}
         priorityFilter={priorityFilter}
         setPriorityFilter={setPriorityFilter}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
       />
 
       {/* Main Content */}
-      <main className="flex-1 ml-64 flex flex-col">
+      <main className="relative z-10 flex flex-1 flex-col lg:ml-64">
         <Header
           taskCount={filteredTasks.length}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           onAddTask={() => handleAddTask()}
           isOffline={isOffline}
+          onOpenSidebar={() => setIsSidebarOpen(true)}
+          theme={theme}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onToggleTheme={() =>
+            setTheme((currentTheme) =>
+              currentTheme === "dark" ? "light" : "dark",
+            )
+          }
         />
 
         {/* Views */}
-        {activeView === "board" && (
-          <BoardView
-            tasks={filteredTasks}
-            onAddTask={handleAddTask}
-            onEditTask={handleEditTask}
-            onDeleteTask={handleDeleteTask}
-            onStatusChange={handleStatusChange}
-          />
-        )}
+        {isLoading ? (
+          <AppShellSkeleton activeView={activeView} />
+        ) : (
+          <>
+            {activeView === "board" && (
+              <BoardView
+                tasks={filteredTasks}
+                onAddTask={handleAddTask}
+                onEditTask={handleEditTask}
+                onDeleteTask={handleDeleteTask}
+                onStatusChange={handleStatusChange}
+              />
+            )}
 
-        {activeView === "list" && (
-          <ListView
-            tasks={filteredTasks}
-            onEditTask={handleEditTask}
-            onDeleteTask={handleDeleteTask}
-          />
-        )}
+            {activeView === "list" && (
+              <ListView
+                tasks={filteredTasks}
+                onEditTask={handleEditTask}
+                onDeleteTask={handleDeleteTask}
+              />
+            )}
 
-        {activeView === "calendar" && (
-          <CalendarView tasks={filteredTasks} onEditTask={handleEditTask} />
-        )}
+            {activeView === "calendar" && (
+              <CalendarView tasks={filteredTasks} onEditTask={handleEditTask} />
+            )}
 
-        {activeView === "productivity" && (
-          <ProductivityView
-            tasks={filteredTasks}
-            onRefresh={fetchData}
-            onEditTask={handleEditTask}
-            showToast={showToast}
-          />
+            {activeView === "productivity" && (
+              <ProductivityView
+                tasks={filteredTasks}
+                onRefresh={fetchData}
+                onEditTask={handleEditTask}
+                showToast={showToast}
+              />
+            )}
+          </>
         )}
       </main>
 

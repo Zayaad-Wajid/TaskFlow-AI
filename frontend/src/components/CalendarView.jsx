@@ -98,34 +98,34 @@ const CalendarView = ({ tasks, onEditTask }) => {
   };
 
   return (
-    <div className="p-6 flex-1">
+    <div className="flex-1 p-4 sm:p-6">
       {/* Calendar Header */}
-      <div className="flex items-center justify-center gap-6 mb-6">
+      <div className="mb-6 flex items-center justify-center gap-3 sm:gap-6">
         <button
           onClick={prevMonth}
-          className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+          className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
-        <h2 className="text-xl font-semibold text-white min-w-[200px] text-center">
+        <h2 className="min-w-[200px] text-center text-lg font-semibold text-slate-900 sm:text-xl dark:text-white">
           {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
         </h2>
         <button
           onClick={nextMonth}
-          className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+          className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
         >
           <ChevronRight className="w-5 h-5" />
         </button>
       </div>
 
       {/* Calendar Grid */}
-      <div className="bg-slate-900/50 rounded-xl p-4">
+      <div className="rounded-xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
         {/* Day Headers */}
         <div className="grid grid-cols-7 gap-2 mb-2">
           {dayNames.map((day) => (
             <div
               key={day}
-              className="text-center py-3 text-xs font-semibold text-slate-500 uppercase"
+              className="py-3 text-center text-xs font-semibold uppercase text-slate-500"
             >
               {day}
             </div>
@@ -141,13 +141,15 @@ const CalendarView = ({ tasks, onEditTask }) => {
                 key={index}
                 className={`min-h-[100px] p-2 rounded-lg border transition-colors ${
                   day.isCurrentMonth
-                    ? "bg-slate-800/50 border-slate-700"
-                    : "bg-slate-800/20 border-slate-700/50 opacity-40"
-                } ${isToday(day.date) ? "border-violet-500" : ""}`}
+                    ? "bg-slate-50 border-slate-200 dark:bg-slate-800/50 dark:border-slate-700"
+                    : "bg-slate-100/70 border-slate-200 opacity-60 dark:bg-slate-800/20 dark:border-slate-700/50"
+                } ${isToday(day.date) ? "border-indigo-500" : ""}`}
               >
                 <div
                   className={`text-sm font-medium mb-2 ${
-                    isToday(day.date) ? "text-violet-400" : "text-slate-300"
+                    isToday(day.date)
+                      ? "text-indigo-500 dark:text-indigo-400"
+                      : "text-slate-700 dark:text-slate-300"
                   }`}
                 >
                   {day.date.getDate()}
@@ -157,13 +159,13 @@ const CalendarView = ({ tasks, onEditTask }) => {
                     <button
                       key={task.id}
                       onClick={() => onEditTask(task)}
-                      className={`w-full text-left px-2 py-1 rounded text-xs text-white truncate ${getPriorityColor(task.priority)} hover:opacity-80 transition-opacity`}
+                      className={`w-full truncate rounded px-2 py-1 text-left text-xs text-white transition-opacity hover:opacity-80 ${getPriorityColor(task.priority)}`}
                     >
                       {task.title}
                     </button>
                   ))}
                   {dayTasks.length > 3 && (
-                    <div className="text-xs text-slate-500 px-2">
+                    <div className="px-2 text-xs text-slate-500">
                       +{dayTasks.length - 3} more
                     </div>
                   )}

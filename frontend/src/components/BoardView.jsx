@@ -52,7 +52,7 @@ const BoardView = ({
       collisionDetection={closestCenter}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex flex-1 gap-5 overflow-x-auto bg-slate-950 p-6">
+      <div className="flex flex-1 gap-5 overflow-x-auto bg-transparent p-4 sm:p-6">
         {statuses.map((status) => (
           <BoardColumn
             key={status}

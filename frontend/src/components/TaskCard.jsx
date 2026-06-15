@@ -48,7 +48,7 @@ const TaskCard = ({ task, onEdit, onDelete }) => {
     <div
       ref={setNodeRef}
       style={style}
-      className={`group mb-3 cursor-grab rounded-lg border border-slate-800 bg-slate-950/80 p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-cyan-400/50 hover:shadow-md hover:shadow-cyan-950/20 ${
+      className={`group mb-3 cursor-grab rounded-lg border border-slate-200 bg-white/85 p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-cyan-400/50 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/80 dark:hover:shadow-cyan-950/20 ${
         isDragging ? "opacity-50 rotate-2" : ""
       }`}
     >
@@ -56,20 +56,20 @@ const TaskCard = ({ task, onEdit, onDelete }) => {
         <button
           {...attributes}
           {...listeners}
-          className="mt-1 cursor-grab rounded-md p-1 text-slate-500 opacity-0 transition-opacity hover:bg-slate-900 hover:text-slate-300 group-hover:opacity-100"
+          className="mt-1 cursor-grab rounded-md p-1 text-slate-500 opacity-0 transition-opacity hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100 dark:hover:bg-slate-900 dark:hover:text-slate-300"
         >
           <GripVertical className="w-4 h-4" />
         </button>
 
         <div className="flex-1">
           <div className="flex items-start justify-between mb-2">
-            <h3 className="font-medium leading-tight text-slate-100">
+            <h3 className="font-medium leading-tight text-slate-900 dark:text-slate-100">
               {task.title}
             </h3>
             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 onClick={() => onEdit(task)}
-                className="rounded-md p-1.5 text-slate-500 transition-colors hover:bg-slate-900 hover:text-slate-200"
+                className="rounded-md p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-900 dark:hover:text-slate-200"
               >
                 <Pencil className="w-3.5 h-3.5" />
               </button>
@@ -83,13 +83,13 @@ const TaskCard = ({ task, onEdit, onDelete }) => {
           </div>
 
           {task.description && (
-            <p className="mb-3 line-clamp-2 text-sm text-slate-400">
+            <p className="mb-3 line-clamp-2 text-sm text-slate-600 dark:text-slate-400">
               {task.description}
             </p>
           )}
 
           {(task.assigned_to || task.scheduled_start || task.focus_minutes) && (
-            <div className="mb-3 flex flex-wrap gap-3 text-xs text-slate-400">
+            <div className="mb-3 flex flex-wrap gap-3 text-xs text-slate-600 dark:text-slate-400">
               {task.assigned_to && (
                 <span className="flex items-center gap-1">
                   <User className="w-3 h-3" /> {task.assigned_to}
@@ -98,7 +98,10 @@ const TaskCard = ({ task, onEdit, onDelete }) => {
               {task.scheduled_start && (
                 <span className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  {new Date(task.scheduled_start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                  {new Date(task.scheduled_start).toLocaleTimeString("en-US", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
                 </span>
               )}
               {task.focus_minutes > 0 && (
@@ -129,7 +132,7 @@ const TaskCard = ({ task, onEdit, onDelete }) => {
               {task.tags?.map((tag, idx) => (
                 <span
                   key={idx}
-                  className="rounded bg-slate-900 px-2 py-0.5 text-xs text-slate-300 ring-1 ring-slate-800"
+                  className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-800"
                 >
                   {tag}
                 </span>
@@ -145,7 +148,7 @@ const TaskCard = ({ task, onEdit, onDelete }) => {
 
               {task.due_date && (
                 <span
-                  className={`flex items-center gap-1 text-xs ${isOverdue() ? "text-red-300" : "text-slate-400"}`}
+                  className={`flex items-center gap-1 text-xs ${isOverdue() ? "text-red-500 dark:text-red-300" : "text-slate-600 dark:text-slate-400"}`}
                 >
                   <Calendar className="w-3 h-3" />
                   {formatDate(task.due_date)}
