@@ -1,12 +1,15 @@
-# TaskFlow - Task Manager
+# TaskFlow-AI - Real-Time Collaboration Dashboard
 
-A modern, ClickUp-inspired task management application built with React, Tailwind CSS, and a Flask API served by Uvicorn.
+[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+
+A modern, ClickUp-inspired task management application built with React, Tailwind CSS, and a FastAPI backend served by Uvicorn.
 
 ![TaskFlow Screenshot](screenshot.png)
 
 ## Features
 
 ### Task Management
+
 - **Kanban Board** - Drag and drop tasks between To Do, In Progress, and Done columns
 - **List View** - Table view with sorting and quick actions
 - **Calendar View** - See tasks by their due dates
@@ -27,6 +30,7 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
 - **Time Tracking** - Log manual or Pomodoro focus sessions per task
 
 ### AI Assistant
+
 - **Natural Language Task Creation** - Create tasks by typing naturally (e.g., "Create a task to review the report by Friday, high priority")
 - **Smart Task Parsing** - Automatically extracts title, description, priority, and due dates from text
 - **Task Breakdown** - AI splits complex tasks into manageable subtasks
@@ -40,7 +44,11 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
 
 ### Storage and Migration
 
-TaskFlow still uses `tasks_data.json`. The backend loader normalizes older files in memory and backfills new fields such as `dependency_ids`, `recurring`, `time_logs`, `activity_feed`, and `settings` before saving. No manual migration step is required.
+TaskFlow uses SQLAlchemy ORM with PostgreSQL for persistent storage. If `DATABASE_URL` is not set or PostgreSQL is not reachable, the backend falls back to a local SQLite database at `instance/taskflow_ai.db`. Existing `tasks_data.json` data can be imported once with `scripts/migrate_tasks_json_to_db.py`.
+
+### Authentication
+
+TaskFlow uses email/password accounts with JWT access and refresh tokens. Access tokens are short-lived and sent as `Authorization: Bearer <token>` on API requests. Refresh tokens are stored by the frontend and exchanged at `/api/auth/refresh` when the access token expires.
 
 ## Tech Stack
 
@@ -55,18 +63,24 @@ TaskFlow still uses `tasks_data.json`. The backend loader normalizes older files
 
 ### Backend
 
-- **Flask + Uvicorn** - API backend served through an ASGI wrapper
-- **Flask-CORS** - Cross-origin resource sharing
+- **FastAPI + Uvicorn** - API backend with OpenAPI docs at `/docs`
+- **CORSMiddleware** - Cross-origin resource sharing
+- **SQLAlchemy + Alembic** - ORM models and database migrations
+- **PostgreSQL** - Primary database, with local SQLite fallback
 - **Gemini** (optional) - Enhanced AI-powered task parsing and insights
 
 ## Project Structure
 
 ```
 TaskFlow/
-├── app.py                    # Flask backend API with ASGI/Uvicorn entrypoint
+├── app.py                    # FastAPI backend API with Uvicorn entrypoint
+├── models.py                 # SQLAlchemy ORM models
+├── database.py               # Database engine/session setup
+├── alembic/                  # Database migrations
+├── scripts/                  # One-time data migration scripts
 ├── agent.py                  # AI agent module
 ├── requirements.txt          # Python dependencies
-├── tasks_data.json           # Task data storage
+├── tasks_data.json           # Legacy JSON data for one-time migration
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
@@ -112,7 +126,45 @@ TaskFlow/
    pip install -r requirements.txt
    ```
 
-3. **Install frontend dependencies**
+3. **Configure environment**
+
+   ```bash
+   copy .env.example .env
+   ```
+
+   Set `DATABASE_URL` to your PostgreSQL database:
+
+   ```env
+   DATABASE_URL=postgresql://<db_user>:<db_password>@localhost:5432/<db_name>
+   JWT_SECRET_KEY=your_local_jwt_secret_here
+   JWT_ALGORITHM=HS256
+   ACCESS_TOKEN_EXPIRE_MINUTES=15
+   REFRESH_TOKEN_EXPIRE_DAYS=7
+   ```
+
+   If PostgreSQL is not reachable, the app falls back to `instance/taskflow_ai.db`.
+
+4. **Create the PostgreSQL database**
+
+   Create the database named in `DATABASE_URL` with your preferred PostgreSQL tooling, for example:
+
+   ```bash
+   createdb <db_name>
+   ```
+
+5. **Run database migrations**
+
+   ```bash
+   alembic upgrade head
+   ```
+
+6. **Import legacy JSON data once**
+
+   ```bash
+   python scripts/migrate_tasks_json_to_db.py
+   ```
+
+7. **Install frontend dependencies**
    ```bash
    cd frontend
    npm install
@@ -123,16 +175,10 @@ TaskFlow/
 1. **Start the backend** (in one terminal)
 
    ```bash
-   python app.py
+   uvicorn app:app --reload --host 127.0.0.1 --port 5000
    ```
 
-   Or run Uvicorn directly:
-
-   ```bash
-   uvicorn app:asgi_app --reload --host 127.0.0.1 --port 5000
-   ```
-
-   The API will run on http://localhost:5000. Visiting that URL returns backend status JSON; the React UI runs from the frontend dev server.
+   The API will run on http://localhost:5000. Visiting that URL returns backend status JSON, and http://localhost:5000/docs shows the FastAPI endpoint docs. The React UI runs from the frontend dev server.
 
 2. **Start the React frontend** (in another terminal)
    ```bash
@@ -145,43 +191,52 @@ TaskFlow/
 
 ### Task Management
 
-| Method | Endpoint                | Description         |
-| ------ | ----------------------- | ------------------- |
-| GET    | `/api/tasks`            | Get all tasks       |
-| POST   | `/api/tasks`            | Create a new task   |
-| PUT    | `/api/tasks/:id`        | Update a task       |
-| DELETE | `/api/tasks/:id`        | Delete a task       |
-| PATCH  | `/api/tasks/:id/status` | Update task status  |
-| POST   | `/api/tasks/:id/comments` | Add a collaboration comment |
+| Method | Endpoint                      | Description                  |
+| ------ | ----------------------------- | ---------------------------- |
+| GET    | `/api/tasks`                  | Get all tasks                |
+| POST   | `/api/tasks`                  | Create a new task            |
+| PUT    | `/api/tasks/:id`              | Update a task                |
+| DELETE | `/api/tasks/:id`              | Delete a task                |
+| PATCH  | `/api/tasks/:id/status`       | Update task status           |
+| POST   | `/api/tasks/:id/comments`     | Add a collaboration comment  |
 | PUT    | `/api/tasks/:id/dependencies` | Replace blocker dependencies |
-| POST   | `/api/tasks/:id/time-logs` | Log focus time for a task |
-| GET    | `/api/stats`            | Get task statistics |
+| POST   | `/api/tasks/:id/time-logs`    | Log focus time for a task    |
+| GET    | `/api/stats`                  | Get task statistics          |
 
 ### AI Agent
 
-| Method | Endpoint                      | Description                          |
-| ------ | ----------------------------- | ------------------------------------ |
-| POST   | `/api/agent/chat`             | Chat with the AI assistant           |
-| POST   | `/api/agent/parse-task`       | Parse natural language into task     |
-| POST   | `/api/agent/breakdown`        | Break down a task into subtasks      |
-| GET    | `/api/agent/plan-day`         | Get prioritized daily plan           |
-| GET    | `/api/agent/insights`         | Get productivity insights            |
-| GET    | `/api/agent/prioritize`       | Get AI-ranked task priorities        |
-| GET    | `/api/agent/schedule`         | Get AI-generated time blocks         |
-| POST   | `/api/agent/apply-schedule`   | Save suggested time blocks to tasks  |
-| GET    | `/api/agent/daily-summary`    | Get end-of-day recap and next-day plan |
-| GET    | `/api/agent/workload-forecast` | Get weekly capacity forecast        |
-| POST   | `/api/agent/create-from-chat` | Create task from parsed data         |
-| POST   | `/api/agent/create-subtasks`  | Create multiple subtasks for a task  |
+| Method | Endpoint                       | Description                            |
+| ------ | ------------------------------ | -------------------------------------- |
+| POST   | `/api/agent/chat`              | Chat with the AI assistant             |
+| POST   | `/api/agent/parse-task`        | Parse natural language into task       |
+| POST   | `/api/agent/breakdown`         | Break down a task into subtasks        |
+| GET    | `/api/agent/plan-day`          | Get prioritized daily plan             |
+| GET    | `/api/agent/insights`          | Get productivity insights              |
+| GET    | `/api/agent/prioritize`        | Get AI-ranked task priorities          |
+| GET    | `/api/agent/schedule`          | Get AI-generated time blocks           |
+| POST   | `/api/agent/apply-schedule`    | Save suggested time blocks to tasks    |
+| GET    | `/api/agent/daily-summary`     | Get end-of-day recap and next-day plan |
+| GET    | `/api/agent/workload-forecast` | Get weekly capacity forecast           |
+| POST   | `/api/agent/create-from-chat`  | Create task from parsed data           |
+| POST   | `/api/agent/create-subtasks`   | Create multiple subtasks for a task    |
 
 ### Habits
 
-| Method | Endpoint                    | Description                   |
-| ------ | --------------------------- | ----------------------------- |
-| GET    | `/api/habits`               | Get all habits                |
-| POST   | `/api/habits`               | Create a habit                |
-| PATCH  | `/api/habits/:id/toggle`    | Toggle completion for a date  |
-| DELETE | `/api/habits/:id`           | Delete a habit                |
+| Method | Endpoint                 | Description                  |
+| ------ | ------------------------ | ---------------------------- |
+| GET    | `/api/habits`            | Get all habits               |
+| POST   | `/api/habits`            | Create a habit               |
+| PATCH  | `/api/habits/:id/toggle` | Toggle completion for a date |
+| DELETE | `/api/habits/:id`        | Delete a habit               |
+
+### Authentication
+
+| Method | Endpoint             | Description                    |
+| ------ | -------------------- | ------------------------------ |
+| POST   | `/api/auth/register` | Create an account and get JWTs |
+| POST   | `/api/auth/login`    | Login and get JWTs             |
+| POST   | `/api/auth/refresh`  | Refresh an expired access JWT  |
+| GET    | `/api/auth/me`       | Get the current user           |
 
 ## Usage
 
@@ -234,4 +289,4 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ---
 
-Built with React, Flask, Uvicorn, and Gemini
+Built with React, FastAPI, Uvicorn, and Gemini

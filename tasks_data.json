@@ -4,5 +4,34 @@
     "To Do",
     "In Progress",
     "Done"
-  ]
+  ],
+  "habits": [],
+  "task_templates": [],
+  "activity_feed": [
+    {
+      "id": "fd445935-3635-4274-948a-730b69889b33",
+      "action": "slack_notification",
+      "task_id": "",
+      "task_title": "",
+      "detail": "TaskFlow AI digest requested from Productivity view",
+      "actor": "TaskFlow",
+      "created_at": "2026-05-23T12:28:56"
+    }
+  ],
+  "integrations": {
+    "google_calendar": {
+      "enabled": false,
+      "calendar_id": "",
+      "last_sync_at": ""
+    },
+    "slack": {
+      "enabled": false,
+      "webhook_url": "",
+      "channel": "",
+      "last_notification_at": ""
+    }
+  },
+  "settings": {
+    "weekly_capacity_minutes": 1800
+  }
 }

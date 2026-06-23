@@ -11,6 +11,7 @@ import Toast from "./components/Toast";
 import AIChat from "./components/AIChat";
 import ProductivityView from "./components/ProductivityView";
 import AuthView from "./components/AuthView";
+import { AuthProvider, useAuth } from "./auth/AuthContext";
 
 const AppShellSkeleton = ({ activeView }) => {
   if (activeView === "list") {
@@ -73,7 +74,7 @@ const AppShellSkeleton = ({ activeView }) => {
   );
 };
 
-function App() {
+function AppContent() {
   const [tasks, setTasks] = useState([]);
   const [stats, setStats] = useState({
     total: 0,
@@ -95,8 +96,7 @@ function App() {
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAuthChecking, setIsAuthChecking] = useState(true);
-  const [currentUser, setCurrentUser] = useState(null);
+  const { user: currentUser, isAuthChecking, logout } = useAuth();
 
   // Modal states
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -139,23 +139,6 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    const bootstrapAuth = async () => {
-      try {
-        const response = await api.me();
-        if (response?.success && response?.user) {
-          setCurrentUser(response.user);
-        }
-      } catch {
-        setCurrentUser(null);
-      } finally {
-        setIsAuthChecking(false);
-      }
-    };
-
-    bootstrapAuth();
   }, []);
 
   useEffect(() => {
@@ -258,12 +241,7 @@ function App() {
   };
 
   const handleLogout = async () => {
-    try {
-      await api.logout();
-    } catch {
-      // Clear local auth state even if the server session already expired.
-    }
-    setCurrentUser(null);
+    await logout();
     setIsSidebarOpen(false);
   };
 
@@ -278,7 +256,7 @@ function App() {
   }
 
   if (!currentUser) {
-    return <AuthView onAuthenticated={setCurrentUser} />;
+    return <AuthView />;
   }
 
   return (
@@ -388,6 +366,14 @@ function App() {
       {/* AI Chat Assistant */}
       <AIChat onRefresh={fetchData} />
     </div>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 

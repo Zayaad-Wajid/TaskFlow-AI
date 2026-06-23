@@ -1,15 +1,16 @@
 import { useState } from "react";
 import { LogIn, UserPlus, ShieldCheck } from "lucide-react";
-import { api } from "../api";
+import { useAuth } from "../auth/AuthContext";
 
 const fieldClass =
   "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-400/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
 
-const AuthView = ({ onAuthenticated }) => {
+const AuthView = () => {
+  const { login, register } = useAuth();
   const [mode, setMode] = useState("login");
-  const [username, setUsername] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("Member");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -21,16 +22,16 @@ const AuthView = ({ onAuthenticated }) => {
     try {
       const response =
         mode === "login"
-          ? await api.login(username.trim(), password)
-          : await api.register(username.trim(), password, role);
+          ? await login(email.trim(), password)
+          : await register(name.trim(), email.trim(), password);
 
       if (!response?.success || !response?.user) {
         setError(response?.error || "Authentication failed.");
         return;
       }
 
-      onAuthenticated(response.user);
-      setUsername("");
+      setName("");
+      setEmail("");
       setPassword("");
     } catch (requestError) {
       setError(requestError?.response?.data?.error || "Unable to continue. Please try again.");
@@ -53,7 +54,7 @@ const AuthView = ({ onAuthenticated }) => {
             Welcome to TaskFlow-AI
           </h1>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            Sign in to access your team workspace and real-time dashboard.
+            Sign in to access your personal workspace and AI task dashboard.
           </p>
         </div>
 
@@ -84,16 +85,29 @@ const AuthView = ({ onAuthenticated }) => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Username</label>
+            <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
             <input
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
               className={fieldClass}
-              placeholder="yourname"
-              minLength={3}
+              placeholder="you@example.com"
               required
             />
           </div>
+
+          {mode === "register" && (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Name</label>
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                className={fieldClass}
+                placeholder="Your name"
+                required
+              />
+            </div>
+          )}
 
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
@@ -107,21 +121,6 @@ const AuthView = ({ onAuthenticated }) => {
               required
             />
           </div>
-
-          {mode === "register" && (
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Role</label>
-              <select
-                value={role}
-                onChange={(event) => setRole(event.target.value)}
-                className={fieldClass}
-              >
-                <option value="Member">Member</option>
-                <option value="Owner">Owner</option>
-                <option value="Viewer">Viewer</option>
-              </select>
-            </div>
-          )}
 
           {error && (
             <p className="rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-600 dark:text-red-300">
@@ -140,7 +139,7 @@ const AuthView = ({ onAuthenticated }) => {
         </form>
 
         <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
-          Quick start demo account: username demo, password demo123
+          Quick start demo account: demo@example.com, password demo123
         </p>
       </div>
     </div>

@@ -58,7 +58,7 @@ const Header = ({
           </button>
 
           <div className="hidden rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:block">
-            {currentUser?.username}
+            {currentUser?.name || currentUser?.email}
           </div>
 
           <button
