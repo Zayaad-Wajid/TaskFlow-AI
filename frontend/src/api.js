@@ -8,6 +8,16 @@ const STATS_CACHE_KEY = "taskflow-offline-stats";
 
 const http = axios.create();
 
+export const getTaskWebSocketUrl = () => {
+  const token = tokenStore.getAccessToken();
+  if (!token) return null;
+
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const isViteDevServer = window.location.port === "5173";
+  const host = isViteDevServer ? `${window.location.hostname}:5000` : window.location.host;
+  return `${protocol}//${host}/ws/tasks?token=${encodeURIComponent(token)}`;
+};
+
 export const tokenStore = {
   getAccessToken: () => localStorage.getItem(ACCESS_TOKEN_KEY),
   getRefreshToken: () => localStorage.getItem(REFRESH_TOKEN_KEY),

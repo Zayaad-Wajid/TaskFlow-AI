@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { api } from "./api";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { api, getTaskWebSocketUrl } from "./api";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
 import BoardView from "./components/BoardView";
@@ -12,6 +12,26 @@ import AIChat from "./components/AIChat";
 import ProductivityView from "./components/ProductivityView";
 import AuthView from "./components/AuthView";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
+
+const calculateStats = (tasks) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return {
+    total: tasks.length,
+    todo: tasks.filter((task) => task.status === "To Do").length,
+    in_progress: tasks.filter((task) => task.status === "In Progress").length,
+    done: tasks.filter((task) => task.status === "Done").length,
+    high_priority: tasks.filter((task) => task.priority === "High").length,
+    blocked: tasks.filter((task) => task.is_blocked).length,
+    overdue: tasks.filter((task) => {
+      if (!task.due_date || task.status === "Done") return false;
+      const dueDate = new Date(task.due_date);
+      dueDate.setHours(0, 0, 0, 0);
+      return dueDate < today;
+    }).length,
+  };
+};
 
 const AppShellSkeleton = ({ activeView }) => {
   if (activeView === "list") {
@@ -97,6 +117,7 @@ function AppContent() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const { user: currentUser, isAuthChecking, logout } = useAuth();
+  const taskSocketRef = useRef(null);
 
   // Modal states
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -141,6 +162,42 @@ function AppContent() {
     }
   }, []);
 
+  const replaceTasks = useCallback((updater) => {
+    setTasks((currentTasks) => {
+      const nextTasks = updater(currentTasks);
+      setStats(calculateStats(nextTasks));
+      return nextTasks;
+    });
+  }, []);
+
+  const applyTaskEvent = useCallback((event) => {
+    if (!event?.type) return;
+
+    if (event.type === "task_deleted") {
+      const deletedTaskId = event.task_id || event.task?.id;
+      if (!deletedTaskId) return;
+      replaceTasks((currentTasks) =>
+        currentTasks.filter((task) => task.id !== deletedTaskId),
+      );
+      return;
+    }
+
+    if (
+      ["task_created", "task_updated", "task_status_changed"].includes(
+        event.type,
+      ) &&
+      event.task
+    ) {
+      replaceTasks((currentTasks) => {
+        const taskExists = currentTasks.some((task) => task.id === event.task.id);
+        if (!taskExists) return [...currentTasks, event.task];
+        return currentTasks.map((task) =>
+          task.id === event.task.id ? event.task : task,
+        );
+      });
+    }
+  }, [replaceTasks]);
+
   useEffect(() => {
     if (!currentUser) {
       setTasks([]);
@@ -149,6 +206,54 @@ function AppContent() {
     }
     fetchData();
   }, [currentUser, fetchData]);
+
+  useEffect(() => {
+    if (!currentUser) return undefined;
+
+    let isStopped = false;
+    let retryCount = 0;
+    let retryTimer = null;
+
+    const connect = () => {
+      const socketUrl = getTaskWebSocketUrl();
+      if (!socketUrl || isStopped) return;
+
+      const socket = new WebSocket(socketUrl);
+      taskSocketRef.current = socket;
+
+      socket.onopen = () => {
+        retryCount = 0;
+      };
+
+      socket.onmessage = (message) => {
+        try {
+          applyTaskEvent(JSON.parse(message.data));
+        } catch (error) {
+          console.error("Invalid task update message:", error);
+        }
+      };
+
+      socket.onclose = () => {
+        if (isStopped) return;
+        const delay = Math.min(1000 * 2 ** retryCount, 10000);
+        retryCount += 1;
+        retryTimer = window.setTimeout(connect, delay);
+      };
+
+      socket.onerror = () => {
+        socket.close();
+      };
+    };
+
+    connect();
+
+    return () => {
+      isStopped = true;
+      window.clearTimeout(retryTimer);
+      taskSocketRef.current?.close();
+      taskSocketRef.current = null;
+    };
+  }, [currentUser, applyTaskEvent]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");

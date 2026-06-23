@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,7 +16,7 @@ load_dotenv()
 
 import auth as jwt_auth
 from agent import get_agent
-from database import get_db
+from database import SessionLocal, get_db
 from models import Activity, AppSetting, Comment, Habit, Task, TimeLog, User
 
 
@@ -36,6 +36,34 @@ agent = get_agent(os.getenv("GEMINI_API_KEY"))
 
 DEFAULT_LISTS = ["To Do", "In Progress", "Done"]
 DEFAULT_CAPACITY_MINUTES = 6 * 60
+
+
+class TaskConnectionManager:
+    def __init__(self) -> None:
+        self.active_connections: dict[int, set[WebSocket]] = {}
+
+    async def connect(self, user_id: int, websocket: WebSocket) -> None:
+        await websocket.accept()
+        self.active_connections.setdefault(user_id, set()).add(websocket)
+
+    def disconnect(self, user_id: int, websocket: WebSocket) -> None:
+        connections = self.active_connections.get(user_id)
+        if not connections:
+            return
+        connections.discard(websocket)
+        if not connections:
+            self.active_connections.pop(user_id, None)
+
+    async def broadcast(self, user_id: int, payload: dict[str, Any]) -> None:
+        connections = list(self.active_connections.get(user_id, set()))
+        for websocket in connections:
+            try:
+                await websocket.send_json(payload)
+            except RuntimeError:
+                self.disconnect(user_id, websocket)
+
+
+task_connections = TaskConnectionManager()
 
 
 class FlexibleModel(BaseModel):
@@ -269,6 +297,28 @@ def user_payload(user: User) -> dict[str, Any]:
 
 
 get_current_user = jwt_auth.get_current_user
+
+
+def get_websocket_user(token: str) -> Optional[User]:
+    if not token:
+        return None
+    try:
+        decoded = jwt_auth.decode_token(token, "access")
+    except HTTPException:
+        return None
+
+    with SessionLocal() as db:
+        return db.get(User, int(decoded["sub"]))
+
+
+async def broadcast_task_event(user_id: int, event_type: str, task: Optional[dict[str, Any]] = None, task_id: str = "") -> None:
+    payload: dict[str, Any] = {"type": event_type}
+    if task is not None:
+        payload["task"] = task
+        payload["task_id"] = task.get("id", task_id)
+    elif task_id:
+        payload["task_id"] = task_id
+    await task_connections.broadcast(user_id, payload)
 
 
 def get_setting(db: Session, key: str, default: Any) -> Any:
@@ -547,6 +597,21 @@ def index():
     }
 
 
+@app.websocket("/ws/tasks")
+async def task_updates(websocket: WebSocket, token: str = Query("")):
+    user = get_websocket_user(token)
+    if not user:
+        await websocket.close(code=1008)
+        return
+
+    await task_connections.connect(user.id, websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        task_connections.disconnect(user.id, websocket)
+
+
 @app.post("/api/auth/register", response_model=AuthResponse, responses={400: {"model": ErrorResponse}, 409: {"model": ErrorResponse}})
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     email = (payload.email or "").strip().lower()
@@ -603,36 +668,42 @@ def get_tasks(user: User = Depends(get_current_user), db: Session = Depends(get_
 
 
 @app.post("/api/tasks", response_model=TaskResponse)
-def add_task(payload: TaskPayload, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def add_task(payload: TaskPayload, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = create_task(db, user.id, model_payload(payload))
     record_activity(db, user.id, "task_created", task, "Task created")
     db.commit()
     db.refresh(task)
-    return {"success": True, "task": task_to_dict(get_task_or_404(db, task.id, user.id))}
+    task_data = task_to_dict(get_task_or_404(db, task.id, user.id))
+    background_tasks.add_task(broadcast_task_event, user.id, "task_created", task_data)
+    return {"success": True, "task": task_data}
 
 
 @app.put("/api/tasks/{task_id}", response_model=TaskResponse, responses={404: {"model": ErrorResponse}})
-def update_task(task_id: str, payload: TaskPayload, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def update_task(task_id: str, payload: TaskPayload, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = get_task_or_404(db, task_id, user.id)
     before = {key: getattr(task, key) for key in ["title", "status", "priority", "due_date", "assigned_to"]}
     apply_task_payload(db, task, model_payload(payload), user.id)
     changed = [key for key, value in before.items() if getattr(task, key) != value]
     record_activity(db, user.id, "task_updated", task, f"Updated {', '.join(changed) if changed else 'task details'}")
     db.commit()
-    return {"success": True, "task": task_to_dict(get_task_or_404(db, task_id, user.id))}
+    task_data = task_to_dict(get_task_or_404(db, task_id, user.id))
+    background_tasks.add_task(broadcast_task_event, user.id, "task_updated", task_data)
+    return {"success": True, "task": task_data}
 
 
 @app.delete("/api/tasks/{task_id}", response_model=SuccessResponse, responses={404: {"model": ErrorResponse}})
-def delete_task(task_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def delete_task(task_id: str, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = get_task_or_404(db, task_id, user.id)
+    task_data = task_to_dict(task)
     record_activity(db, user.id, "task_deleted", task, "Task deleted")
     db.delete(task)
     db.commit()
+    background_tasks.add_task(broadcast_task_event, user.id, "task_deleted", task_data, task_id)
     return {"success": True}
 
 
 @app.patch("/api/tasks/{task_id}/status", response_model=TaskResponse, responses={404: {"model": ErrorResponse}})
-def update_task_status(task_id: str, payload: StatusPayload, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def update_task_status(task_id: str, payload: StatusPayload, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = get_task_or_404(db, task_id, user.id)
     task.status = payload.status
     task.updated_at = now_dt()
@@ -642,11 +713,13 @@ def update_task_status(task_id: str, payload: StatusPayload, user: User = Depend
         task.completed_at = None
     record_activity(db, user.id, "status_changed", task, f"Moved to {payload.status}")
     db.commit()
-    return {"success": True, "task": task_to_dict(get_task_or_404(db, task_id, user.id))}
+    task_data = task_to_dict(get_task_or_404(db, task_id, user.id))
+    background_tasks.add_task(broadcast_task_event, user.id, "task_status_changed", task_data)
+    return {"success": True, "task": task_data}
 
 
 @app.post("/api/tasks/{task_id}/comments", response_model=CommentResponse, responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}})
-def add_task_comment(task_id: str, payload: CommentPayload, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def add_task_comment(task_id: str, payload: CommentPayload, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     comment_text = payload.text.strip()
     if not comment_text:
         raise HTTPException(status_code=400, detail={"success": False, "error": "Comment text is required"})
@@ -658,21 +731,25 @@ def add_task_comment(task_id: str, payload: CommentPayload, user: User = Depends
     record_activity(db, user.id, "comment_added", task, f"{comment.author} commented", comment.author)
     db.commit()
     db.refresh(comment)
-    return {"success": True, "comment": comment_to_dict(comment), "task": task_to_dict(get_task_or_404(db, task_id, user.id))}
+    task_data = task_to_dict(get_task_or_404(db, task_id, user.id))
+    background_tasks.add_task(broadcast_task_event, user.id, "task_updated", task_data)
+    return {"success": True, "comment": comment_to_dict(comment), "task": task_data}
 
 
 @app.put("/api/tasks/{task_id}/dependencies", response_model=TaskResponse, responses={404: {"model": ErrorResponse}})
-def update_task_dependencies(task_id: str, payload: DependenciesPayload, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def update_task_dependencies(task_id: str, payload: DependenciesPayload, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = get_task_or_404(db, task_id, user.id)
     task.dependencies = db.query(Task).filter(Task.user_id == user.id, Task.id.in_(payload.dependency_ids), Task.id != task_id).all()
     task.updated_at = now_dt()
     record_activity(db, user.id, "dependencies_updated", task, f"{len(task.dependencies)} blocker(s) linked")
     db.commit()
-    return {"success": True, "task": task_to_dict(get_task_or_404(db, task_id, user.id))}
+    task_data = task_to_dict(get_task_or_404(db, task_id, user.id))
+    background_tasks.add_task(broadcast_task_event, user.id, "task_updated", task_data)
+    return {"success": True, "task": task_data}
 
 
 @app.post("/api/tasks/{task_id}/time-logs", response_model=TimeLogResponse, responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}})
-def add_time_log(task_id: str, payload: TimeLogPayload, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def add_time_log(task_id: str, payload: TimeLogPayload, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = get_task_or_404(db, task_id, user.id)
     minutes = int(payload.minutes or 0)
     if minutes <= 0:
@@ -694,7 +771,9 @@ def add_time_log(task_id: str, payload: TimeLogPayload, user: User = Depends(get
     record_activity(db, user.id, "time_logged", task, f"{minutes} focus minute(s) logged")
     db.commit()
     db.refresh(log)
-    return {"success": True, "log": time_log_to_dict(log), "task": task_to_dict(get_task_or_404(db, task_id, user.id))}
+    task_data = task_to_dict(get_task_or_404(db, task_id, user.id))
+    background_tasks.add_task(broadcast_task_event, user.id, "task_updated", task_data)
+    return {"success": True, "log": time_log_to_dict(log), "task": task_data}
 
 
 @app.get("/api/activity", response_model=ActivityResponse)
@@ -714,7 +793,7 @@ def suggest_schedule(start: str = "09:00", end: str = "17:00", user: User = Depe
 
 
 @app.post("/api/agent/apply-schedule", response_model=TasksMutationResponse)
-def apply_schedule(payload: ApplySchedulePayload, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def apply_schedule(payload: ApplySchedulePayload, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     updated = []
     for block in payload.blocks:
         task = task_query(db, user.id).filter(Task.id == block.get("task_id")).first()
@@ -725,7 +804,10 @@ def apply_schedule(payload: ApplySchedulePayload, user: User = Depends(get_curre
             updated.append(task)
             record_activity(db, user.id, "schedule_applied", task, f"{dt_to_str(task.scheduled_start)} to {dt_to_str(task.scheduled_end)}")
     db.commit()
-    return {"success": True, "tasks": [task_to_dict(get_task_or_404(db, task.id, user.id)) for task in updated]}
+    tasks = [task_to_dict(get_task_or_404(db, task.id, user.id)) for task in updated]
+    for task_data in tasks:
+        background_tasks.add_task(broadcast_task_event, user.id, "task_updated", task_data)
+    return {"success": True, "tasks": tasks}
 
 
 @app.get("/api/agent/daily-summary", response_model=dict[str, Any])
@@ -838,15 +920,17 @@ def get_insights(user: User = Depends(get_current_user), db: Session = Depends(g
 
 
 @app.post("/api/agent/create-from-chat", response_model=TaskResponse)
-def create_task_from_chat(payload: TaskPayload, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_task_from_chat(payload: TaskPayload, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = create_task(db, user.id, model_payload(payload))
     record_activity(db, user.id, "task_created_from_chat", task, "Created by AI chat")
     db.commit()
-    return {"success": True, "task": task_to_dict(get_task_or_404(db, task.id, user.id))}
+    task_data = task_to_dict(get_task_or_404(db, task.id, user.id))
+    background_tasks.add_task(broadcast_task_event, user.id, "task_created", task_data)
+    return {"success": True, "task": task_data}
 
 
 @app.post("/api/agent/create-subtasks", response_model=TasksMutationResponse)
-def create_subtasks(payload: SubtasksPayload, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_subtasks(payload: SubtasksPayload, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     created_tasks = []
     for subtask in payload.subtasks:
         task = create_task(db, user.id, {
@@ -857,7 +941,10 @@ def create_subtasks(payload: SubtasksPayload, user: User = Depends(get_current_u
         created_tasks.append(task)
         record_activity(db, user.id, "subtask_created", task, payload.parent_tag)
     db.commit()
-    return {"success": True, "tasks": [task_to_dict(get_task_or_404(db, task.id, user.id)) for task in created_tasks]}
+    tasks = [task_to_dict(get_task_or_404(db, task.id, user.id)) for task in created_tasks]
+    for task_data in tasks:
+        background_tasks.add_task(broadcast_task_event, user.id, "task_created", task_data)
+    return {"success": True, "tasks": tasks}
 
 
 @app.on_event("startup")

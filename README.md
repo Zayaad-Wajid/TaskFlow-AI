@@ -257,6 +257,39 @@ TaskFlow/
 | POST   | `/api/auth/refresh`  | Refresh an expired access JWT  |
 | GET    | `/api/auth/me`       | Get the current user           |
 
+### Real-Time Task Updates
+
+TaskFlow exposes a per-user WebSocket stream at:
+
+```text
+/ws/tasks?token=<access_token>
+```
+
+The `token` query parameter must be the same JWT access token used for REST calls. Connections without a valid access token are closed with WebSocket policy violation code `1008`.
+
+Task mutation routes broadcast JSON events to every connected browser tab/device for the authenticated user:
+
+```json
+{
+  "type": "task_updated",
+  "task_id": "task-id",
+  "task": {
+    "id": "task-id",
+    "title": "Review dashboard",
+    "status": "In Progress"
+  }
+}
+```
+
+Supported event types:
+
+| Type                  | Sent when                                      |
+| --------------------- | ---------------------------------------------- |
+| `task_created`        | A task is created through REST or AI endpoints |
+| `task_updated`        | A task is edited, commented, scheduled, or logged |
+| `task_status_changed` | A task is moved between status columns         |
+| `task_deleted`        | A task is deleted                              |
+
 ## Development Checks
 
 Run these from inside `backend/`:
