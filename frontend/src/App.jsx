@@ -11,6 +11,7 @@ import Toast from "./components/Toast";
 import AIChat from "./components/AIChat";
 import ProductivityView from "./components/ProductivityView";
 import AuthView from "./components/AuthView";
+import InviteTeammateModal from "./components/InviteTeammateModal";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 
 const calculateStats = (tasks) => {
@@ -118,6 +119,10 @@ function AppContent() {
   const [isLoading, setIsLoading] = useState(true);
   const { user: currentUser, isAuthChecking, logout } = useAuth();
   const taskSocketRef = useRef(null);
+  const activeWorkspaceIdRef = useRef(null);
+  const [workspaces, setWorkspaces] = useState([]);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(null);
+  const [workspaceToInvite, setWorkspaceToInvite] = useState(null);
 
   // Modal states
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -146,8 +151,8 @@ function AppContent() {
     setIsLoading(true);
     try {
       const [tasksData, statsData] = await Promise.all([
-        api.getTasks(),
-        api.getStats(),
+        api.getTasks(activeWorkspaceId),
+        api.getStats(activeWorkspaceId),
       ]);
       setTasks(tasksData.tasks || []);
       setStats(statsData);
@@ -159,6 +164,16 @@ function AppContent() {
       showToast("Error fetching tasks", "error");
     } finally {
       setIsLoading(false);
+    }
+  }, [activeWorkspaceId]);
+
+  const fetchWorkspaces = useCallback(async () => {
+    try {
+      const response = await api.getWorkspaces();
+      setWorkspaces(response.workspaces || []);
+    } catch (error) {
+      console.error("Error fetching workspaces:", error);
+      showToast("Error fetching workspaces", "error");
     }
   }, []);
 
@@ -172,6 +187,8 @@ function AppContent() {
 
   const applyTaskEvent = useCallback((event) => {
     if (!event?.type) return;
+    const eventWorkspaceId = event.task?.workspace_id || null;
+    if (eventWorkspaceId !== activeWorkspaceIdRef.current) return;
 
     if (event.type === "task_deleted") {
       const deletedTaskId = event.task_id || event.task?.id;
@@ -201,11 +218,18 @@ function AppContent() {
   useEffect(() => {
     if (!currentUser) {
       setTasks([]);
+      setWorkspaces([]);
+      setActiveWorkspaceId(null);
       setIsLoading(false);
       return;
     }
+    fetchWorkspaces();
     fetchData();
-  }, [currentUser, fetchData]);
+  }, [currentUser, fetchData, fetchWorkspaces]);
+
+  useEffect(() => {
+    activeWorkspaceIdRef.current = activeWorkspaceId;
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     if (!currentUser) return undefined;
@@ -318,11 +342,12 @@ function AppContent() {
 
   const handleSaveTask = async (taskData, taskId) => {
     try {
+      const scopedTaskData = { ...taskData, workspace_id: activeWorkspaceId };
       if (taskId) {
-        await api.updateTask(taskId, taskData);
+        await api.updateTask(taskId, scopedTaskData);
         showToast("Task updated successfully");
       } else {
-        await api.addTask(taskData);
+        await api.addTask(scopedTaskData);
         showToast("Task added successfully");
       }
       await fetchData();
@@ -348,6 +373,37 @@ function AppContent() {
   const handleLogout = async () => {
     await logout();
     setIsSidebarOpen(false);
+  };
+
+  const handleSelectWorkspace = (workspaceId) => {
+    setActiveWorkspaceId(workspaceId);
+    setIsLoading(true);
+  };
+
+  const handleCreateWorkspace = async () => {
+    const name = window.prompt("Workspace name");
+    if (!name?.trim()) return;
+    try {
+      const response = await api.createWorkspace(name.trim());
+      await fetchWorkspaces();
+      setActiveWorkspaceId(response.workspace.id);
+      showToast("Workspace created");
+    } catch (error) {
+      console.error("Error creating workspace:", error);
+      showToast("Error creating workspace", "error");
+    }
+  };
+
+  const handleInviteTeammate = async (email) => {
+    if (!workspaceToInvite) return;
+    try {
+      await api.inviteWorkspaceMember(workspaceToInvite.id, email);
+      showToast("Teammate invited");
+      setWorkspaceToInvite(null);
+    } catch (error) {
+      console.error("Error inviting teammate:", error);
+      showToast(error.response?.data?.error || "Error inviting teammate", "error");
+    }
   };
 
   if (isAuthChecking) {
@@ -379,6 +435,11 @@ function AppContent() {
         setPriorityFilter={setPriorityFilter}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        onSelectWorkspace={handleSelectWorkspace}
+        onCreateWorkspace={handleCreateWorkspace}
+        onInviteWorkspace={setWorkspaceToInvite}
       />
 
       {/* Main Content */}
@@ -460,6 +521,13 @@ function AppContent() {
         onConfirm={confirmDelete}
       />
 
+      <InviteTeammateModal
+        isOpen={Boolean(workspaceToInvite)}
+        workspace={workspaceToInvite}
+        onClose={() => setWorkspaceToInvite(null)}
+        onInvite={handleInviteTeammate}
+      />
+
       {/* Toast */}
       <Toast
         message={toast.message}
@@ -469,7 +537,7 @@ function AppContent() {
       />
 
       {/* AI Chat Assistant */}
-      <AIChat onRefresh={fetchData} />
+      <AIChat onRefresh={fetchData} workspaceId={activeWorkspaceId} />
     </div>
   );
 }

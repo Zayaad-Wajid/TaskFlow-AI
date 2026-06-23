@@ -39,6 +39,15 @@ TaskFlow uses SQLAlchemy ORM with PostgreSQL for persistent storage. If `DATABAS
 
 TaskFlow uses email/password accounts with JWT access and refresh tokens. Access tokens are short-lived and sent as `Authorization: Bearer <token>` on API requests. Refresh tokens are stored by the frontend and exchanged at `/api/auth/refresh` when the access token expires.
 
+### Workspaces
+
+Tasks can live in either a personal list or a shared workspace. Personal tasks have no `workspace_id` and are visible only to the user who created them. Workspace tasks include a `workspace_id` and are visible to every member of that workspace.
+
+Workspace roles are intentionally simple:
+
+- **owner** - can invite users, remove members, delete the workspace, and manage workspace tasks
+- **member** - can view and manage tasks in workspaces they belong to
+
 ## Tech Stack
 
 ### Frontend
@@ -256,6 +265,25 @@ TaskFlow/
 | POST   | `/api/auth/login`    | Login and get JWTs             |
 | POST   | `/api/auth/refresh`  | Refresh an expired access JWT  |
 | GET    | `/api/auth/me`       | Get the current user           |
+
+### Workspaces
+
+| Method | Endpoint                                      | Description                         |
+| ------ | --------------------------------------------- | ----------------------------------- |
+| GET    | `/api/workspaces`                             | List workspaces I belong to         |
+| POST   | `/api/workspaces`                             | Create a workspace                  |
+| GET    | `/api/workspaces/:id/members`                 | List workspace members              |
+| POST   | `/api/workspaces/:id/invite`                  | Invite an existing user by email    |
+| DELETE | `/api/workspaces/:id/members/:user_id`        | Remove a member, owner-only         |
+| DELETE | `/api/workspaces/:id`                         | Delete a workspace, owner-only      |
+
+Task and stats listing endpoints accept an optional `workspace_id` query parameter:
+
+```text
+GET /api/tasks                  # personal tasks
+GET /api/tasks?workspace_id=... # shared workspace tasks
+GET /api/stats?workspace_id=... # stats for that workspace
+```
 
 ### Real-Time Task Updates
 

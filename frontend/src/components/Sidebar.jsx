@@ -7,6 +7,7 @@ import {
   Filter,
   Sparkles,
 } from "lucide-react";
+import WorkspaceSwitcher from "./WorkspaceSwitcher";
 
 const Sidebar = ({
   activeView,
@@ -16,6 +17,11 @@ const Sidebar = ({
   setPriorityFilter,
   isOpen,
   onClose,
+  workspaces,
+  activeWorkspaceId,
+  onSelectWorkspace,
+  onCreateWorkspace,
+  onInviteWorkspace,
 }) => {
   const navItems = [
     { id: "board", icon: LayoutDashboard, label: "Board" },
@@ -87,6 +93,17 @@ const Sidebar = ({
             })}
           </ul>
         </nav>
+
+        <WorkspaceSwitcher
+          workspaces={workspaces}
+          activeWorkspaceId={activeWorkspaceId}
+          onSelectWorkspace={(workspaceId) => {
+            onSelectWorkspace(workspaceId);
+            onClose?.();
+          }}
+          onCreateWorkspace={onCreateWorkspace}
+          onInvite={onInviteWorkspace}
+        />
 
         <div className="mx-4 mt-3 rounded-lg border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/70">
           <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-500">

@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 
-const AIChat = ({ onTaskCreated, onRefresh }) => {
+const AIChat = ({ onTaskCreated, onRefresh, workspaceId }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
     {
@@ -86,7 +86,7 @@ const AIChat = ({ onTaskCreated, onRefresh }) => {
     if (!pendingTask) return;
 
     try {
-      await api.createTaskFromChat(pendingTask);
+      await api.createTaskFromChat(pendingTask, workspaceId);
       setMessages((prev) => [
         ...prev,
         {
@@ -118,6 +118,7 @@ const AIChat = ({ onTaskCreated, onRefresh }) => {
       await api.createSubtasks(
         pendingSubtasks.subtasks,
         pendingSubtasks.main_task,
+        workspaceId,
       );
       setMessages((prev) => [
         ...prev,

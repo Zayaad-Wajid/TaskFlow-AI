@@ -27,6 +27,32 @@ class User(Base):
     tasks = relationship("Task", back_populates="user", cascade="all, delete-orphan")
     habits = relationship("Habit", back_populates="user", cascade="all, delete-orphan")
     activity_items = relationship("Activity", back_populates="user", cascade="all, delete-orphan")
+    owned_workspaces = relationship("Workspace", back_populates="owner", cascade="all, delete-orphan")
+    workspace_memberships = relationship("WorkspaceMember", back_populates="user", cascade="all, delete-orphan")
+
+
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id = Column(String(36), primary_key=True)
+    name = Column(String(255), nullable=False)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="owned_workspaces")
+    members = relationship("WorkspaceMember", back_populates="workspace", cascade="all, delete-orphan")
+    tasks = relationship("Task", back_populates="workspace")
+
+
+class WorkspaceMember(Base):
+    __tablename__ = "workspace_members"
+
+    workspace_id = Column(String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    role = Column(String(40), nullable=False, default="member")
+
+    workspace = relationship("Workspace", back_populates="members")
+    user = relationship("User", back_populates="workspace_memberships")
 
 
 class Task(Base):
@@ -34,6 +60,7 @@ class Task(Base):
 
     id = Column(String(36), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True, index=True)
     title = Column(String(255), nullable=False, default="")
     description = Column(Text, nullable=False, default="")
     status = Column(String(40), nullable=False, default="To Do", index=True)
@@ -55,6 +82,7 @@ class Task(Base):
     completed_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="tasks")
+    workspace = relationship("Workspace", back_populates="tasks")
     recurrence_parent = relationship("Task", remote_side=[id], backref="recurrence_children")
     comments = relationship("Comment", back_populates="task", cascade="all, delete-orphan", order_by="Comment.created_at")
     time_logs = relationship("TimeLog", back_populates="task", cascade="all, delete-orphan", order_by="TimeLog.created_at")

@@ -17,7 +17,7 @@ load_dotenv()
 import auth as jwt_auth
 from agent import get_agent
 from database import SessionLocal, get_db
-from models import Activity, AppSetting, Comment, Habit, Task, TimeLog, User
+from models import Activity, AppSetting, Comment, Habit, Task, TimeLog, User, Workspace, WorkspaceMember
 
 
 app = FastAPI(title="TaskFlow-AI API")
@@ -123,6 +123,7 @@ class TaskPayload(FlexibleModel):
     subtasks: Optional[list[dict[str, Any]]] = None
     dependency_ids: Optional[list[str]] = None
     recurring: Optional[dict[str, Any]] = None
+    workspace_id: Optional[str] = None
 
 
 class TaskResponse(BaseModel):
@@ -228,6 +229,15 @@ class BreakdownPayload(BaseModel):
 class SubtasksPayload(BaseModel):
     subtasks: list[dict[str, Any]] = Field(default_factory=list)
     parent_tag: str = ""
+    workspace_id: Optional[str] = None
+
+
+class WorkspacePayload(BaseModel):
+    name: str = ""
+
+
+class InviteWorkspacePayload(BaseModel):
+    email: str = ""
 
 
 def now_dt() -> datetime:
@@ -299,6 +309,50 @@ def user_payload(user: User) -> dict[str, Any]:
 get_current_user = jwt_auth.get_current_user
 
 
+def workspace_to_dict(workspace: Workspace, role: str = "member") -> dict[str, Any]:
+    return {
+        "id": workspace.id,
+        "name": workspace.name,
+        "owner_id": workspace.owner_id,
+        "role": role,
+        "created_at": dt_to_str(workspace.created_at),
+    }
+
+
+def workspace_member_to_dict(member: WorkspaceMember) -> dict[str, Any]:
+    return {
+        "workspace_id": member.workspace_id,
+        "user_id": member.user_id,
+        "role": member.role,
+        "email": member.user.email,
+        "name": member.user.name,
+    }
+
+
+def get_workspace_membership(db: Session, workspace_id: str | None, user_id: int) -> Optional[WorkspaceMember]:
+    if not workspace_id:
+        return None
+    return (
+        db.query(WorkspaceMember)
+        .filter(WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == user_id)
+        .first()
+    )
+
+
+def require_workspace_member(db: Session, workspace_id: str, user_id: int) -> WorkspaceMember:
+    membership = get_workspace_membership(db, workspace_id, user_id)
+    if not membership:
+        raise HTTPException(status_code=403, detail={"success": False, "error": "Workspace access required"})
+    return membership
+
+
+def require_workspace_owner(db: Session, workspace_id: str, user_id: int) -> WorkspaceMember:
+    membership = require_workspace_member(db, workspace_id, user_id)
+    if membership.role != "owner":
+        raise HTTPException(status_code=403, detail={"success": False, "error": "Workspace owner role required"})
+    return membership
+
+
 def get_websocket_user(token: str) -> Optional[User]:
     if not token:
         return None
@@ -319,6 +373,21 @@ async def broadcast_task_event(user_id: int, event_type: str, task: Optional[dic
     elif task_id:
         payload["task_id"] = task_id
     await task_connections.broadcast(user_id, payload)
+
+
+async def broadcast_task_event_to_users(user_ids: list[int], event_type: str, task: Optional[dict[str, Any]] = None, task_id: str = "") -> None:
+    for target_user_id in user_ids:
+        await broadcast_task_event(target_user_id, event_type, task, task_id)
+
+
+def task_audience_user_ids(db: Session, task: dict[str, Any], fallback_user_id: int) -> list[int]:
+    workspace_id = task.get("workspace_id")
+    if not workspace_id:
+        return [fallback_user_id]
+    return [
+        member.user_id
+        for member in db.query(WorkspaceMember).filter(WorkspaceMember.workspace_id == workspace_id).all()
+    ]
 
 
 def get_setting(db: Session, key: str, default: Any) -> Any:
@@ -349,8 +418,14 @@ def seed_database(db: Session) -> None:
     db.commit()
 
 
-def task_query(db: Session, user_id: int):
-    return db.query(Task).filter(Task.user_id == user_id).options(
+def task_query(db: Session, user_id: int, workspace_id: Optional[str] = None):
+    query = db.query(Task)
+    if workspace_id:
+        require_workspace_member(db, workspace_id, user_id)
+        query = query.filter(Task.workspace_id == workspace_id)
+    else:
+        query = query.filter(Task.user_id == user_id, Task.workspace_id.is_(None))
+    return query.options(
         selectinload(Task.comments),
         selectinload(Task.time_logs),
         selectinload(Task.dependencies),
@@ -359,7 +434,16 @@ def task_query(db: Session, user_id: int):
 
 
 def get_task_or_404(db: Session, task_id: str, user_id: int) -> Task:
-    task = task_query(db, user_id).filter(Task.id == task_id).first()
+    task = db.query(Task).options(
+        selectinload(Task.comments),
+        selectinload(Task.time_logs),
+        selectinload(Task.dependencies),
+        selectinload(Task.blocking_tasks),
+    ).filter(Task.id == task_id).first()
+    if task and task.workspace_id:
+        require_workspace_member(db, task.workspace_id, user_id)
+    elif task and task.user_id != user_id:
+        task = None
     if not task:
         raise HTTPException(status_code=404, detail={"success": False, "error": "Task not found"})
     return task
@@ -391,6 +475,7 @@ def task_to_dict(task: Task, include_links: bool = True) -> dict[str, Any]:
     blocking = [item.id for item in task.blocking_tasks if item.status != "Done"] if include_links else []
     return {
         "id": task.id,
+        "workspace_id": task.workspace_id,
         "title": task.title,
         "description": task.description,
         "status": task.status,
@@ -484,9 +569,13 @@ def apply_task_payload(db: Session, task: Task, payload: dict[str, Any], user_id
         task.recurring_cadence = recurring.get("cadence", "")
         task.recurring_next_due_date = parse_date(recurring.get("next_due_date"))
     if "dependency_ids" in payload:
+        dependency_query = db.query(Task).filter(Task.id.in_(payload.get("dependency_ids") or []), Task.id != task.id)
+        if task.workspace_id:
+            dependency_query = dependency_query.filter(Task.workspace_id == task.workspace_id)
+        else:
+            dependency_query = dependency_query.filter(Task.user_id == user_id, Task.workspace_id.is_(None))
         valid_dependencies = (
-            db.query(Task)
-            .filter(Task.user_id == user_id, Task.id.in_(payload.get("dependency_ids") or []), Task.id != task.id)
+            dependency_query
             .all()
         )
         task.dependencies = valid_dependencies
@@ -500,9 +589,14 @@ def apply_task_payload(db: Session, task: Task, payload: dict[str, Any], user_id
 
 def create_task(db: Session, user_id: int, payload: dict[str, Any] | None = None) -> Task:
     now = now_dt()
+    payload = payload or {}
+    workspace_id = payload.get("workspace_id")
+    if workspace_id:
+        require_workspace_member(db, workspace_id, user_id)
     task = Task(
         id=str(uuid.uuid4()),
         user_id=user_id,
+        workspace_id=workspace_id,
         title="",
         description="",
         status="To Do",
@@ -519,7 +613,7 @@ def create_task(db: Session, user_id: int, payload: dict[str, Any] | None = None
     )
     db.add(task)
     db.flush()
-    apply_task_payload(db, task, payload or {}, user_id)
+    apply_task_payload(db, task, payload, user_id)
     return task
 
 
@@ -566,12 +660,12 @@ def clone_recurring_tasks(db: Session, user_id: int, tasks: list[Task]) -> list[
     return created
 
 
-def tasks_response(db: Session, user_id: int) -> dict[str, Any]:
-    tasks = task_query(db, user_id).order_by(Task.created_at).all()
+def tasks_response(db: Session, user_id: int, workspace_id: Optional[str] = None) -> dict[str, Any]:
+    tasks = task_query(db, user_id, workspace_id).order_by(Task.created_at).all()
     created = clone_recurring_tasks(db, user_id, tasks)
     if created:
         db.commit()
-        tasks = task_query(db, user_id).order_by(Task.created_at).all()
+        tasks = task_query(db, user_id, workspace_id).order_by(Task.created_at).all()
 
     return {
         "tasks": [task_to_dict(task) for task in tasks],
@@ -662,9 +756,91 @@ def me(user: User = Depends(get_current_user)):
     return {"success": True, "user": user_payload(user)}
 
 
+@app.get("/api/workspaces", response_model=dict[str, Any])
+def list_workspaces(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    memberships = (
+        db.query(WorkspaceMember)
+        .join(Workspace)
+        .options(selectinload(WorkspaceMember.workspace))
+        .filter(WorkspaceMember.user_id == user.id)
+        .order_by(Workspace.created_at)
+        .all()
+    )
+    return {"workspaces": [workspace_to_dict(member.workspace, member.role) for member in memberships]}
+
+
+@app.post("/api/workspaces", response_model=dict[str, Any])
+def create_workspace(payload: WorkspacePayload, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail={"success": False, "error": "Workspace name is required"})
+
+    workspace = Workspace(id=str(uuid.uuid4()), name=name, owner_id=user.id, created_at=now_dt())
+    db.add(workspace)
+    db.flush()
+    db.add(WorkspaceMember(workspace_id=workspace.id, user_id=user.id, role="owner"))
+    db.commit()
+    db.refresh(workspace)
+    return {"success": True, "workspace": workspace_to_dict(workspace, "owner")}
+
+
+@app.get("/api/workspaces/{workspace_id}/members", response_model=dict[str, Any], responses={403: {"model": ErrorResponse}, 404: {"model": ErrorResponse}})
+def list_workspace_members(workspace_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_workspace_member(db, workspace_id, user.id)
+    members = (
+        db.query(WorkspaceMember)
+        .options(selectinload(WorkspaceMember.user))
+        .filter(WorkspaceMember.workspace_id == workspace_id)
+        .order_by(WorkspaceMember.role.desc())
+        .all()
+    )
+    return {"members": [workspace_member_to_dict(member) for member in members]}
+
+
+@app.post("/api/workspaces/{workspace_id}/invite", response_model=dict[str, Any], responses={403: {"model": ErrorResponse}, 404: {"model": ErrorResponse}})
+def invite_workspace_member(workspace_id: str, payload: InviteWorkspacePayload, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_workspace_owner(db, workspace_id, user.id)
+    invitee = get_user_by_email(db, payload.email.strip().lower())
+    if not invitee:
+        raise HTTPException(status_code=404, detail={"success": False, "error": "No user found with that email"})
+
+    member = get_workspace_membership(db, workspace_id, invitee.id)
+    if not member:
+        member = WorkspaceMember(workspace_id=workspace_id, user_id=invitee.id, role="member")
+        db.add(member)
+        db.commit()
+        db.refresh(member)
+    return {"success": True, "member": workspace_member_to_dict(member)}
+
+
+@app.delete("/api/workspaces/{workspace_id}/members/{member_user_id}", response_model=SuccessResponse, responses={403: {"model": ErrorResponse}, 404: {"model": ErrorResponse}})
+def remove_workspace_member(workspace_id: str, member_user_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_workspace_owner(db, workspace_id, user.id)
+    if member_user_id == user.id:
+        raise HTTPException(status_code=400, detail={"success": False, "error": "Owners cannot remove themselves"})
+
+    member = get_workspace_membership(db, workspace_id, member_user_id)
+    if not member:
+        raise HTTPException(status_code=404, detail={"success": False, "error": "Workspace member not found"})
+    db.delete(member)
+    db.commit()
+    return {"success": True}
+
+
+@app.delete("/api/workspaces/{workspace_id}", response_model=SuccessResponse, responses={403: {"model": ErrorResponse}, 404: {"model": ErrorResponse}})
+def delete_workspace(workspace_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_workspace_owner(db, workspace_id, user.id)
+    workspace = db.get(Workspace, workspace_id)
+    if not workspace:
+        raise HTTPException(status_code=404, detail={"success": False, "error": "Workspace not found"})
+    db.delete(workspace)
+    db.commit()
+    return {"success": True}
+
+
 @app.get("/api/tasks", response_model=TasksResponse)
-def get_tasks(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return tasks_response(db, user.id)
+def get_tasks(workspace_id: Optional[str] = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return tasks_response(db, user.id, workspace_id)
 
 
 @app.post("/api/tasks", response_model=TaskResponse)
@@ -674,7 +850,7 @@ def add_task(payload: TaskPayload, background_tasks: BackgroundTasks, user: User
     db.commit()
     db.refresh(task)
     task_data = task_to_dict(get_task_or_404(db, task.id, user.id))
-    background_tasks.add_task(broadcast_task_event, user.id, "task_created", task_data)
+    background_tasks.add_task(broadcast_task_event_to_users, task_audience_user_ids(db, task_data, user.id), "task_created", task_data)
     return {"success": True, "task": task_data}
 
 
@@ -687,7 +863,7 @@ def update_task(task_id: str, payload: TaskPayload, background_tasks: Background
     record_activity(db, user.id, "task_updated", task, f"Updated {', '.join(changed) if changed else 'task details'}")
     db.commit()
     task_data = task_to_dict(get_task_or_404(db, task_id, user.id))
-    background_tasks.add_task(broadcast_task_event, user.id, "task_updated", task_data)
+    background_tasks.add_task(broadcast_task_event_to_users, task_audience_user_ids(db, task_data, user.id), "task_updated", task_data)
     return {"success": True, "task": task_data}
 
 
@@ -698,7 +874,7 @@ def delete_task(task_id: str, background_tasks: BackgroundTasks, user: User = De
     record_activity(db, user.id, "task_deleted", task, "Task deleted")
     db.delete(task)
     db.commit()
-    background_tasks.add_task(broadcast_task_event, user.id, "task_deleted", task_data, task_id)
+    background_tasks.add_task(broadcast_task_event_to_users, task_audience_user_ids(db, task_data, user.id), "task_deleted", task_data, task_id)
     return {"success": True}
 
 
@@ -714,7 +890,7 @@ def update_task_status(task_id: str, payload: StatusPayload, background_tasks: B
     record_activity(db, user.id, "status_changed", task, f"Moved to {payload.status}")
     db.commit()
     task_data = task_to_dict(get_task_or_404(db, task_id, user.id))
-    background_tasks.add_task(broadcast_task_event, user.id, "task_status_changed", task_data)
+    background_tasks.add_task(broadcast_task_event_to_users, task_audience_user_ids(db, task_data, user.id), "task_status_changed", task_data)
     return {"success": True, "task": task_data}
 
 
@@ -732,7 +908,7 @@ def add_task_comment(task_id: str, payload: CommentPayload, background_tasks: Ba
     db.commit()
     db.refresh(comment)
     task_data = task_to_dict(get_task_or_404(db, task_id, user.id))
-    background_tasks.add_task(broadcast_task_event, user.id, "task_updated", task_data)
+    background_tasks.add_task(broadcast_task_event_to_users, task_audience_user_ids(db, task_data, user.id), "task_updated", task_data)
     return {"success": True, "comment": comment_to_dict(comment), "task": task_data}
 
 
@@ -744,7 +920,7 @@ def update_task_dependencies(task_id: str, payload: DependenciesPayload, backgro
     record_activity(db, user.id, "dependencies_updated", task, f"{len(task.dependencies)} blocker(s) linked")
     db.commit()
     task_data = task_to_dict(get_task_or_404(db, task_id, user.id))
-    background_tasks.add_task(broadcast_task_event, user.id, "task_updated", task_data)
+    background_tasks.add_task(broadcast_task_event_to_users, task_audience_user_ids(db, task_data, user.id), "task_updated", task_data)
     return {"success": True, "task": task_data}
 
 
@@ -772,7 +948,7 @@ def add_time_log(task_id: str, payload: TimeLogPayload, background_tasks: Backgr
     db.commit()
     db.refresh(log)
     task_data = task_to_dict(get_task_or_404(db, task_id, user.id))
-    background_tasks.add_task(broadcast_task_event, user.id, "task_updated", task_data)
+    background_tasks.add_task(broadcast_task_event_to_users, task_audience_user_ids(db, task_data, user.id), "task_updated", task_data)
     return {"success": True, "log": time_log_to_dict(log), "task": task_data}
 
 
@@ -806,7 +982,7 @@ def apply_schedule(payload: ApplySchedulePayload, background_tasks: BackgroundTa
     db.commit()
     tasks = [task_to_dict(get_task_or_404(db, task.id, user.id)) for task in updated]
     for task_data in tasks:
-        background_tasks.add_task(broadcast_task_event, user.id, "task_updated", task_data)
+        background_tasks.add_task(broadcast_task_event_to_users, task_audience_user_ids(db, task_data, user.id), "task_updated", task_data)
     return {"success": True, "tasks": tasks}
 
 
@@ -874,8 +1050,8 @@ def delete_habit(habit_id: str, user: User = Depends(get_current_user), db: Sess
 
 
 @app.get("/api/stats", response_model=StatsResponse)
-def get_stats(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    tasks = task_query(db, user.id).all()
+def get_stats(workspace_id: Optional[str] = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    tasks = task_query(db, user.id, workspace_id).all()
     today = now_dt().date()
     return {
         "total": len(tasks),
@@ -925,7 +1101,7 @@ def create_task_from_chat(payload: TaskPayload, background_tasks: BackgroundTask
     record_activity(db, user.id, "task_created_from_chat", task, "Created by AI chat")
     db.commit()
     task_data = task_to_dict(get_task_or_404(db, task.id, user.id))
-    background_tasks.add_task(broadcast_task_event, user.id, "task_created", task_data)
+    background_tasks.add_task(broadcast_task_event_to_users, task_audience_user_ids(db, task_data, user.id), "task_created", task_data)
     return {"success": True, "task": task_data}
 
 
@@ -937,13 +1113,14 @@ def create_subtasks(payload: SubtasksPayload, background_tasks: BackgroundTasks,
             "title": subtask.get("title", "Subtask"),
             "priority": subtask.get("priority", "Medium"),
             "tags": [payload.parent_tag] if payload.parent_tag else [],
+            "workspace_id": payload.workspace_id,
         })
         created_tasks.append(task)
         record_activity(db, user.id, "subtask_created", task, payload.parent_tag)
     db.commit()
     tasks = [task_to_dict(get_task_or_404(db, task.id, user.id)) for task in created_tasks]
     for task_data in tasks:
-        background_tasks.add_task(broadcast_task_event, user.id, "task_created", task_data)
+        background_tasks.add_task(broadcast_task_event_to_users, task_audience_user_ids(db, task_data, user.id), "task_created", task_data)
     return {"success": True, "tasks": tasks}
 
 

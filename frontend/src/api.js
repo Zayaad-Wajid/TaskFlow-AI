@@ -91,26 +91,32 @@ const applyAuthResponse = (response) => {
   return response.data;
 };
 
+const workspaceParams = (workspaceId) =>
+  workspaceId ? { params: { workspace_id: workspaceId } } : {};
+
+const scopedCacheKey = (key, workspaceId) =>
+  `${key}:${workspaceId || "personal"}`;
+
 export const api = {
-  getTasks: async () => {
+  getTasks: async (workspaceId = null) => {
     try {
-      const response = await http.get(`${API_BASE}/tasks`);
-      return cacheValue(TASK_CACHE_KEY, response.data);
+      const response = await http.get(`${API_BASE}/tasks`, workspaceParams(workspaceId));
+      return cacheValue(scopedCacheKey(TASK_CACHE_KEY, workspaceId), response.data);
     } catch (error) {
       if (isNetworkError(error)) {
-        return { ...readCache(TASK_CACHE_KEY, { tasks: [] }), offline: true };
+        return { ...readCache(scopedCacheKey(TASK_CACHE_KEY, workspaceId), { tasks: [] }), offline: true };
       }
       throw error;
     }
   },
 
-  getStats: async () => {
+  getStats: async (workspaceId = null) => {
     try {
-      const response = await http.get(`${API_BASE}/stats`);
-      return cacheValue(STATS_CACHE_KEY, response.data);
+      const response = await http.get(`${API_BASE}/stats`, workspaceParams(workspaceId));
+      return cacheValue(scopedCacheKey(STATS_CACHE_KEY, workspaceId), response.data);
     } catch (error) {
       if (isNetworkError(error)) {
-        return { ...readCache(STATS_CACHE_KEY, { total: 0, todo: 0, in_progress: 0, done: 0, overdue: 0 }), offline: true };
+        return { ...readCache(scopedCacheKey(STATS_CACHE_KEY, workspaceId), { total: 0, todo: 0, in_progress: 0, done: 0, overdue: 0 }), offline: true };
       }
       throw error;
     }
@@ -133,8 +139,12 @@ export const api = {
   applySchedule: async (blocks) => (await http.post(`${API_BASE}/agent/apply-schedule`, { blocks })).data,
   getDailySummary: async () => (await http.get(`${API_BASE}/agent/daily-summary`)).data,
   getWorkloadForecast: async () => (await http.get(`${API_BASE}/agent/workload-forecast`)).data,
-  createTaskFromChat: async (taskData) => (await http.post(`${API_BASE}/agent/create-from-chat`, taskData)).data,
-  createSubtasks: async (subtasks, parentTag = "") => (await http.post(`${API_BASE}/agent/create-subtasks`, { subtasks, parent_tag: parentTag })).data,
+  createTaskFromChat: async (taskData, workspaceId = null) => (
+    await http.post(`${API_BASE}/agent/create-from-chat`, { ...taskData, workspace_id: workspaceId })
+  ).data,
+  createSubtasks: async (subtasks, parentTag = "", workspaceId = null) => (
+    await http.post(`${API_BASE}/agent/create-subtasks`, { subtasks, parent_tag: parentTag, workspace_id: workspaceId })
+  ).data,
 
   getHabits: async () => (await http.get(`${API_BASE}/habits`)).data,
   addHabit: async (habit) => (await http.post(`${API_BASE}/habits`, habit)).data,
@@ -149,4 +159,15 @@ export const api = {
     return { success: true };
   },
   me: async () => (await http.get(`${API_BASE}/auth/me`)).data,
+
+  getWorkspaces: async () => (await http.get(`${API_BASE}/workspaces`)).data,
+  createWorkspace: async (name) => (await http.post(`${API_BASE}/workspaces`, { name })).data,
+  inviteWorkspaceMember: async (workspaceId, email) => (
+    await http.post(`${API_BASE}/workspaces/${workspaceId}/invite`, { email })
+  ).data,
+  getWorkspaceMembers: async (workspaceId) => (await http.get(`${API_BASE}/workspaces/${workspaceId}/members`)).data,
+  removeWorkspaceMember: async (workspaceId, userId) => (
+    await http.delete(`${API_BASE}/workspaces/${workspaceId}/members/${userId}`)
+  ).data,
+  deleteWorkspace: async (workspaceId) => (await http.delete(`${API_BASE}/workspaces/${workspaceId}`)).data,
 };
