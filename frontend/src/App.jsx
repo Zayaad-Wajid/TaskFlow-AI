@@ -107,6 +107,13 @@ function AppContent() {
   const [activeView, setActiveView] = useState("board");
   const [searchQuery, setSearchQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [tagsFilter, setTagsFilter] = useState("");
+  const [sortBy, setSortBy] = useState("created_at");
+  const [sortOrder, setSortOrder] = useState("asc");
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(50);
+  const [totalTasks, setTotalTasks] = useState(0);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [theme, setTheme] = useState(() => {
     const savedTheme = localStorage.getItem("taskflow-theme");
@@ -137,6 +144,7 @@ function AppContent() {
     message: "",
     type: "success",
   });
+  const totalPages = Math.max(1, Math.ceil(totalTasks / pageSize));
 
   const showToast = (message, type = "success") => {
     setToast({ isVisible: true, message, type });
@@ -151,10 +159,22 @@ function AppContent() {
     setIsLoading(true);
     try {
       const [tasksData, statsData] = await Promise.all([
-        api.getTasks(activeWorkspaceId),
+        api.getTasks({
+          workspaceId: activeWorkspaceId,
+          search: searchQuery,
+          priority: priorityFilter,
+          status: statusFilter,
+          tags: tagsFilter,
+          sortBy,
+          sortOrder,
+          page,
+          pageSize,
+        }),
         api.getStats(activeWorkspaceId),
       ]);
-      setTasks(tasksData.tasks || []);
+      const taskItems = tasksData.items || tasksData.tasks || [];
+      setTasks(taskItems);
+      setTotalTasks(tasksData.total ?? taskItems.length);
       setStats(statsData);
       setIsOffline(
         Boolean(tasksData.offline || statsData.offline || !navigator.onLine),
@@ -165,7 +185,17 @@ function AppContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeWorkspaceId]);
+  }, [
+    activeWorkspaceId,
+    page,
+    pageSize,
+    priorityFilter,
+    searchQuery,
+    sortBy,
+    sortOrder,
+    statusFilter,
+    tagsFilter,
+  ]);
 
   const fetchWorkspaces = useCallback(async () => {
     try {
@@ -232,6 +262,10 @@ function AppContent() {
   }, [activeWorkspaceId]);
 
   useEffect(() => {
+    setPage(1);
+  }, [activeWorkspaceId, searchQuery, priorityFilter, statusFilter, tagsFilter, sortBy, sortOrder]);
+
+  useEffect(() => {
     if (!currentUser) return undefined;
 
     let isStopped = false;
@@ -252,6 +286,7 @@ function AppContent() {
       socket.onmessage = (message) => {
         try {
           applyTaskEvent(JSON.parse(message.data));
+          fetchData();
         } catch (error) {
           console.error("Invalid task update message:", error);
         }
@@ -277,7 +312,7 @@ function AppContent() {
       taskSocketRef.current?.close();
       taskSocketRef.current = null;
     };
-  }, [currentUser, applyTaskEvent]);
+  }, [currentUser, applyTaskEvent, fetchData]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -299,16 +334,6 @@ function AppContent() {
       window.removeEventListener("offline", goOffline);
     };
   }, [fetchData]);
-
-  // Filter tasks based on search and priority
-  const filteredTasks = tasks.filter((task) => {
-    const matchesSearch =
-      task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      task.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesPriority =
-      priorityFilter === "all" || task.priority === priorityFilter;
-    return matchesSearch && matchesPriority;
-  });
 
   // Task operations
   const handleAddTask = (status = "To Do") => {
@@ -433,6 +458,14 @@ function AppContent() {
         stats={stats}
         priorityFilter={priorityFilter}
         setPriorityFilter={setPriorityFilter}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        tagsFilter={tagsFilter}
+        setTagsFilter={setTagsFilter}
+        sortBy={sortBy}
+        setSortBy={setSortBy}
+        sortOrder={sortOrder}
+        setSortOrder={setSortOrder}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         workspaces={workspaces}
@@ -445,7 +478,7 @@ function AppContent() {
       {/* Main Content */}
       <main className="relative z-10 flex flex-1 flex-col lg:ml-64">
         <Header
-          taskCount={filteredTasks.length}
+          taskCount={totalTasks}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           onAddTask={() => handleAddTask()}
@@ -468,7 +501,7 @@ function AppContent() {
           <>
             {activeView === "board" && (
               <BoardView
-                tasks={filteredTasks}
+                tasks={tasks}
                 onAddTask={handleAddTask}
                 onEditTask={handleEditTask}
                 onDeleteTask={handleDeleteTask}
@@ -478,24 +511,45 @@ function AppContent() {
 
             {activeView === "list" && (
               <ListView
-                tasks={filteredTasks}
+                tasks={tasks}
                 onEditTask={handleEditTask}
                 onDeleteTask={handleDeleteTask}
               />
             )}
 
             {activeView === "calendar" && (
-              <CalendarView tasks={filteredTasks} onEditTask={handleEditTask} />
+              <CalendarView tasks={tasks} onEditTask={handleEditTask} />
             )}
 
             {activeView === "productivity" && (
               <ProductivityView
-                tasks={filteredTasks}
+                tasks={tasks}
                 onRefresh={fetchData}
                 onEditTask={handleEditTask}
                 showToast={showToast}
               />
             )}
+            <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-600 sm:px-6 lg:px-8 dark:border-slate-800 dark:text-slate-400">
+              <span>
+                Page {page} of {totalPages} · {totalTasks} tasks
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))}
+                  disabled={page <= 1}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 font-medium transition enabled:hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:enabled:hover:bg-slate-800"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setPage((currentPage) => Math.min(totalPages, currentPage + 1))}
+                  disabled={page >= totalPages}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 font-medium transition enabled:hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:enabled:hover:bg-slate-800"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
           </>
         )}
       </main>

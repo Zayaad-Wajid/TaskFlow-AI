@@ -91,6 +91,31 @@ const applyAuthResponse = (response) => {
   return response.data;
 };
 
+const taskQueryParams = ({
+  workspaceId,
+  search,
+  priority,
+  status,
+  tags,
+  sortBy,
+  sortOrder,
+  page,
+  pageSize,
+} = {}) => {
+  const params = {
+    workspace_id: workspaceId || undefined,
+    search: search || undefined,
+    priority: priority && priority !== "all" ? priority : undefined,
+    status: status && status !== "all" ? status : undefined,
+    tags: tags || undefined,
+    sort_by: sortBy || undefined,
+    sort_order: sortOrder || undefined,
+    page: page || undefined,
+    page_size: pageSize || undefined,
+  };
+  return { params };
+};
+
 const workspaceParams = (workspaceId) =>
   workspaceId ? { params: { workspace_id: workspaceId } } : {};
 
@@ -98,11 +123,13 @@ const scopedCacheKey = (key, workspaceId) =>
   `${key}:${workspaceId || "personal"}`;
 
 export const api = {
-  getTasks: async (workspaceId = null) => {
+  getTasks: async (filters = {}) => {
     try {
-      const response = await http.get(`${API_BASE}/tasks`, workspaceParams(workspaceId));
+      const response = await http.get(`${API_BASE}/tasks`, taskQueryParams(filters));
+      const workspaceId = filters.workspaceId || null;
       return cacheValue(scopedCacheKey(TASK_CACHE_KEY, workspaceId), response.data);
     } catch (error) {
+      const workspaceId = filters.workspaceId || null;
       if (isNetworkError(error)) {
         return { ...readCache(scopedCacheKey(TASK_CACHE_KEY, workspaceId), { tasks: [] }), offline: true };
       }

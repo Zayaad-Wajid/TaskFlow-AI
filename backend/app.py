@@ -9,6 +9,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Req
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import asc, desc, func, or_
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, selectinload
 
@@ -132,7 +133,11 @@ class TaskResponse(BaseModel):
 
 
 class TasksResponse(FlexibleModel):
-    tasks: list[dict[str, Any]]
+    items: list[dict[str, Any]]
+    total: int
+    page: int
+    page_size: int
+    tasks: list[dict[str, Any]] = Field(default_factory=list)
     lists: list[str] = Field(default_factory=list)
     habits: list[dict[str, Any]] = Field(default_factory=list)
     activity_feed: list[dict[str, Any]] = Field(default_factory=list)
@@ -433,6 +438,48 @@ def task_query(db: Session, user_id: int, workspace_id: Optional[str] = None):
     )
 
 
+def filtered_task_query(
+    db: Session,
+    user_id: int,
+    workspace_id: Optional[str] = None,
+    search: str = "",
+    priority: str = "",
+    status: str = "",
+    tags: str = "",
+):
+    query = task_query(db, user_id, workspace_id)
+
+    if search:
+        pattern = f"%{search.strip()}%"
+        query = query.filter(or_(Task.title.ilike(pattern), Task.description.ilike(pattern)))
+
+    if priority and priority != "all":
+        query = query.filter(Task.priority == priority)
+
+    if status and status != "all":
+        query = query.filter(Task.status == status)
+
+    tag_values = [tag.strip() for tag in tags.split(",") if tag.strip()]
+    for tag in tag_values:
+        query = query.filter(Task.tags.ilike(f"%{tag}%"))
+
+    return query
+
+
+def apply_task_sort(query, sort_by: str, sort_order: str):
+    sort_columns = {
+        "created_at": Task.created_at,
+        "updated_at": Task.updated_at,
+        "due_date": Task.due_date,
+        "priority": Task.priority,
+        "status": Task.status,
+        "title": func.lower(Task.title),
+    }
+    column = sort_columns.get(sort_by, Task.created_at)
+    direction = desc if sort_order.lower() == "desc" else asc
+    return query.order_by(direction(column), desc(Task.created_at))
+
+
 def get_task_or_404(db: Session, task_id: str, user_id: int) -> Task:
     task = db.query(Task).options(
         selectinload(Task.comments),
@@ -660,15 +707,41 @@ def clone_recurring_tasks(db: Session, user_id: int, tasks: list[Task]) -> list[
     return created
 
 
-def tasks_response(db: Session, user_id: int, workspace_id: Optional[str] = None) -> dict[str, Any]:
+def tasks_response(
+    db: Session,
+    user_id: int,
+    workspace_id: Optional[str] = None,
+    search: str = "",
+    priority: str = "",
+    status: str = "",
+    tags: str = "",
+    sort_by: str = "created_at",
+    sort_order: str = "asc",
+    page: int = 1,
+    page_size: int = 50,
+) -> dict[str, Any]:
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 200)
     tasks = task_query(db, user_id, workspace_id).order_by(Task.created_at).all()
     created = clone_recurring_tasks(db, user_id, tasks)
     if created:
         db.commit()
-        tasks = task_query(db, user_id, workspace_id).order_by(Task.created_at).all()
+    query = filtered_task_query(db, user_id, workspace_id, search, priority, status, tags)
+    total = query.count()
+    items = (
+        apply_task_sort(query, sort_by, sort_order)
+        .limit(page_size)
+        .offset((page - 1) * page_size)
+        .all()
+    )
+    item_dicts = [task_to_dict(task) for task in items]
 
     return {
-        "tasks": [task_to_dict(task) for task in tasks],
+        "items": item_dicts,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "tasks": item_dicts,
         "lists": get_setting(db, "lists", DEFAULT_LISTS),
         "habits": [habit_to_dict(habit) for habit in db.query(Habit).filter(Habit.user_id == user_id).order_by(Habit.created_at).all()],
         "activity_feed": [activity_to_dict(item) for item in db.query(Activity).filter(Activity.user_id == user_id).order_by(Activity.created_at.desc()).limit(200).all()],
@@ -839,8 +912,32 @@ def delete_workspace(workspace_id: str, user: User = Depends(get_current_user), 
 
 
 @app.get("/api/tasks", response_model=TasksResponse)
-def get_tasks(workspace_id: Optional[str] = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return tasks_response(db, user.id, workspace_id)
+def get_tasks(
+    workspace_id: Optional[str] = None,
+    search: str = "",
+    priority: str = "",
+    status: str = "",
+    tags: str = "",
+    sort_by: str = "created_at",
+    sort_order: str = "asc",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return tasks_response(
+        db=db,
+        user_id=user.id,
+        workspace_id=workspace_id,
+        search=search,
+        priority=priority,
+        status=status,
+        tags=tags,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @app.post("/api/tasks", response_model=TaskResponse)

@@ -77,6 +77,34 @@ def test_authenticated_user_can_update_task_status(client):
     assert data["task"]["completed_at"] is not None
 
 
+def test_tasks_support_backend_filtering_and_pagination(client):
+    user = register_user(client)
+    headers = auth_headers(user["access_token"])
+    client.post(
+        "/api/tasks",
+        json={"title": "Write API docs", "description": "Backend filtering", "priority": "High", "tags": ["docs"]},
+        headers=headers,
+    )
+    client.post(
+        "/api/tasks",
+        json={"title": "Polish UI", "description": "Frontend pass", "priority": "Low", "tags": ["design"]},
+        headers=headers,
+    )
+
+    response = client.get(
+        "/api/tasks",
+        params={"search": "api", "priority": "High", "tags": "docs", "page": 1, "page_size": 1},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["page"] == 1
+    assert data["page_size"] == 1
+    assert data["items"][0]["title"] == "Write API docs"
+
+
 def test_habit_create_and_toggle(client):
     user = register_user(client)
     headers = auth_headers(user["access_token"])

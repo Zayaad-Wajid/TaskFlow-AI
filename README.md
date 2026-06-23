@@ -221,7 +221,7 @@ TaskFlow/
 
 | Method | Endpoint                      | Description                  |
 | ------ | ----------------------------- | ---------------------------- |
-| GET    | `/api/tasks`                  | Get all tasks                |
+| GET    | `/api/tasks`                  | Get paginated tasks          |
 | POST   | `/api/tasks`                  | Create a new task            |
 | PUT    | `/api/tasks/:id`              | Update a task                |
 | DELETE | `/api/tasks/:id`              | Delete a task                |
@@ -283,6 +283,30 @@ Task and stats listing endpoints accept an optional `workspace_id` query paramet
 GET /api/tasks                  # personal tasks
 GET /api/tasks?workspace_id=... # shared workspace tasks
 GET /api/stats?workspace_id=... # stats for that workspace
+```
+
+`GET /api/tasks` also accepts scalable backend filters and pagination:
+
+```text
+search=<text>          # matches title or description
+priority=High         # High, Medium, Low
+status=In Progress    # To Do, In Progress, Done
+tags=api,docs         # comma-separated tag filters
+sort_by=due_date      # created_at, updated_at, due_date, priority, status, title
+sort_order=asc        # asc or desc
+page=1
+page_size=50
+```
+
+Task list responses use this shape:
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "page": 1,
+  "page_size": 50
+}
 ```
 
 ### Real-Time Task Updates

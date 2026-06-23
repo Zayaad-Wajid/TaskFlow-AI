@@ -15,6 +15,14 @@ const Sidebar = ({
   stats,
   priorityFilter,
   setPriorityFilter,
+  statusFilter,
+  setStatusFilter,
+  tagsFilter,
+  setTagsFilter,
+  sortBy,
+  setSortBy,
+  sortOrder,
+  setSortOrder,
   isOpen,
   onClose,
   workspaces,
@@ -120,6 +128,45 @@ const Sidebar = ({
             <option value="Medium">Medium</option>
             <option value="Low">Low</option>
           </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+          >
+            <option value="all">All statuses</option>
+            <option value="To Do">To Do</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Done">Done</option>
+          </select>
+          <input
+            type="text"
+            value={tagsFilter}
+            onChange={(e) => setTagsFilter(e.target.value)}
+            placeholder="Tags"
+            className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+          />
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            >
+              <option value="created_at">Created</option>
+              <option value="updated_at">Updated</option>
+              <option value="due_date">Due date</option>
+              <option value="priority">Priority</option>
+              <option value="status">Status</option>
+              <option value="title">Title</option>
+            </select>
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            >
+              <option value="asc">Asc</option>
+              <option value="desc">Desc</option>
+            </select>
+          </div>
         </div>
 
         <div className="mx-4 mt-auto mb-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
