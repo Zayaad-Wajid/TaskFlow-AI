@@ -4,8 +4,6 @@
 
 A modern, ClickUp-inspired task management application built with React, Tailwind CSS, and a FastAPI backend served by Uvicorn.
 
-![TaskFlow Screenshot](screenshot.png)
-
 ## Features
 
 ### Task Management
@@ -13,16 +11,9 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
 - **Kanban Board** - Drag and drop tasks between To Do, In Progress, and Done columns
 - **List View** - Table view with sorting and quick actions
 - **Calendar View** - See tasks by their due dates
-- **Task Management** - Create, edit, and delete tasks with:
-  - Title and description
-  - Priority levels (High, Medium, Low)
-  - Due dates
-  - Tags
+- **Task Management** - Create, edit, and delete tasks with title, description, priority, due date, and tags
 - **Search & Filter** - Find tasks quickly with search and priority filters
-- **Real-time Stats** - Dashboard showing task counts and overdue items
-- **Clean UI** - Calm darker interface with focused spacing and friendly interactions
 - **Team Collaboration** - Assign tasks to teammates and keep lightweight task comments
-- **Offline Mode** - Cached tasks and stats remain available when the backend/network is unavailable
 - **Pomodoro Timer** - Built-in focus timer for 25-minute work sessions
 - **Habit Tracking** - Create daily habits, mark today complete, and track streaks
 - **Recurring Tasks** - Daily and weekly task series auto-clone from the next due date
@@ -31,20 +22,18 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
 
 ### AI Assistant
 
-- **Natural Language Task Creation** - Create tasks by typing naturally (e.g., "Create a task to review the report by Friday, high priority")
+- **Natural Language Task Creation** - Create tasks by typing naturally
 - **Smart Task Parsing** - Automatically extracts title, description, priority, and due dates from text
 - **Task Breakdown** - AI splits complex tasks into manageable subtasks
 - **Daily Planner** - Get a prioritized plan for your day's tasks
 - **Productivity Insights** - Analytics on completion rates, overdue tasks, and personalized tips
-- **AI Task Prioritization** - Rank active work by priority, urgency, progress, and ownership
 - **AI Scheduling Assistant** - Generate time-blocked schedules from active tasks and estimates
-- **AI Daily Summary** - End-of-day recap, focus totals, and next-day plan
 - **Workload Forecasting** - Weekly capacity forecast from due dates and task estimates
 - **Chat Interface** - Floating AI assistant accessible from any view
 
 ### Storage and Migration
 
-TaskFlow uses SQLAlchemy ORM with PostgreSQL for persistent storage. If `DATABASE_URL` is not set or PostgreSQL is not reachable, the backend falls back to a local SQLite database at `instance/taskflow_ai.db`. Existing `tasks_data.json` data can be imported once with `scripts/migrate_tasks_json_to_db.py`.
+TaskFlow uses SQLAlchemy ORM with PostgreSQL for persistent storage. If `DATABASE_URL` is not set or PostgreSQL is not reachable, the backend falls back to a local SQLite database at `backend/instance/taskflow_ai.db`. Existing `backend/tasks_data.json` data can be imported once from inside `backend/` with `python scripts/migrate_tasks_json_to_db.py`.
 
 ### Authentication
 
@@ -71,36 +60,27 @@ TaskFlow uses email/password accounts with JWT access and refresh tokens. Access
 
 ## Project Structure
 
-```
+```text
 TaskFlow/
-├── app.py                    # FastAPI backend API with Uvicorn entrypoint
-├── models.py                 # SQLAlchemy ORM models
-├── database.py               # Database engine/session setup
-├── alembic/                  # Database migrations
-├── scripts/                  # One-time data migration scripts
-├── agent.py                  # AI agent module
-├── requirements.txt          # Python dependencies
-├── tasks_data.json           # Legacy JSON data for one-time migration
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Sidebar.jsx       # Navigation & stats
-│   │   │   ├── Header.jsx        # Search & add task
-│   │   │   ├── BoardView.jsx     # Kanban board
-│   │   │   ├── BoardColumn.jsx   # Board column
-│   │   │   ├── TaskCard.jsx      # Task card
-│   │   │   ├── ListView.jsx      # Table view
-│   │   │   ├── CalendarView.jsx  # Calendar view
-│   │   │   ├── TaskModal.jsx     # Add/edit modal
-│   │   │   ├── DeleteModal.jsx   # Delete confirmation
-│   │   │   ├── Toast.jsx         # Notifications
-│   │   │   └── AIChat.jsx        # AI chat assistant
-│   │   ├── api.js               # API client
-│   │   ├── App.jsx              # Main app
-│   │   └── index.css            # Tailwind styles
-│   ├── package.json
-│   └── vite.config.js
-└── README.md
+|-- backend/
+|   |-- app.py                    # FastAPI backend API with Uvicorn entrypoint
+|   |-- agent.py                  # AI agent module
+|   |-- auth.py                   # JWT auth helpers and dependencies
+|   |-- database.py               # Database engine/session setup
+|   |-- models.py                 # SQLAlchemy ORM models
+|   |-- alembic/                  # Database migrations
+|   |-- scripts/                  # One-time data migration scripts
+|   |-- tests/                    # Backend pytest suite
+|   |-- requirements.txt          # Python runtime dependencies
+|   |-- requirements-dev.txt      # Python dev/test dependencies
+|   `-- tasks_data.json           # Legacy JSON data for one-time migration
+|-- frontend/
+|   |-- src/
+|   |-- package.json
+|   `-- vite.config.js
+|-- .github/workflows/ci.yml
+|-- .gitignore
+`-- README.md
 ```
 
 ## Getting Started
@@ -110,6 +90,7 @@ TaskFlow/
 - Python 3.10+
 - Node.js 18+
 - npm or yarn
+- PostgreSQL, unless you want to use the local SQLite fallback
 
 ### Installation
 
@@ -120,16 +101,48 @@ TaskFlow/
    cd TaskFlow
    ```
 
-2. **Install Python dependencies**
+2. **Create and activate the backend virtual environment**
+
+   Windows PowerShell:
+
+   ```powershell
+   cd backend
+   python -m venv .venv
+   .venv\Scripts\activate
+   ```
+
+   macOS/Linux:
+
+   ```bash
+   cd backend
+   python -m venv .venv
+   source .venv/bin/activate
+   ```
+
+3. **Install Python dependencies**
 
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Configure environment**
+   For tests and linting:
 
    ```bash
+   pip install -r requirements-dev.txt
+   ```
+
+4. **Configure environment**
+
+   Windows PowerShell:
+
+   ```powershell
    copy .env.example .env
+   ```
+
+   macOS/Linux:
+
+   ```bash
+   cp .env.example .env
    ```
 
    Set `DATABASE_URL` to your PostgreSQL database:
@@ -142,9 +155,9 @@ TaskFlow/
    REFRESH_TOKEN_EXPIRE_DAYS=7
    ```
 
-   If PostgreSQL is not reachable, the app falls back to `instance/taskflow_ai.db`.
+   If PostgreSQL is not reachable, the app falls back to `backend/instance/taskflow_ai.db`.
 
-4. **Create the PostgreSQL database**
+5. **Create the PostgreSQL database**
 
    Create the database named in `DATABASE_URL` with your preferred PostgreSQL tooling, for example:
 
@@ -152,40 +165,46 @@ TaskFlow/
    createdb <db_name>
    ```
 
-5. **Run database migrations**
+6. **Run database migrations**
+
+   From inside `backend/`:
 
    ```bash
    alembic upgrade head
    ```
 
-6. **Import legacy JSON data once**
+7. **Import legacy JSON data once**
+
+   From inside `backend/`:
 
    ```bash
    python scripts/migrate_tasks_json_to_db.py
    ```
 
-7. **Install frontend dependencies**
+8. **Install frontend dependencies**
+
    ```bash
-   cd frontend
+   cd ../frontend
    npm install
    ```
 
-### Running the Application
+## Running the Application
 
-1. **Start the backend** (in one terminal)
+1. **Start the backend** from inside `backend/`
 
    ```bash
    uvicorn app:app --reload --host 127.0.0.1 --port 5000
    ```
 
-   The API will run on http://localhost:5000. Visiting that URL returns backend status JSON, and http://localhost:5000/docs shows the FastAPI endpoint docs. The React UI runs from the frontend dev server.
+   The API will run on http://localhost:5000. Visiting that URL returns backend status JSON, and http://localhost:5000/docs shows the FastAPI endpoint docs.
 
-2. **Start the React frontend** (in another terminal)
+2. **Start the React frontend** from inside `frontend/`
+
    ```bash
-   cd frontend
    npm run dev
    ```
-   The app will open at http://localhost:5173
+
+   The app will open at http://localhost:5173.
 
 ## API Endpoints
 
@@ -238,55 +257,22 @@ TaskFlow/
 | POST   | `/api/auth/refresh`  | Refresh an expired access JWT  |
 | GET    | `/api/auth/me`       | Get the current user           |
 
-## Usage
+## Development Checks
 
-### Adding a Task
+Run these from inside `backend/`:
 
-1. Click the **"Add Task"** button in the header
-2. Fill in the task details (title, description, priority, due date, tags)
-3. Click **"Add Task"** to save
+```bash
+flake8 .
+pytest -q
+```
 
-### Moving Tasks
+CI runs lint and tests on every push and pull request through `.github/workflows/ci.yml`.
 
-- **Drag and drop** tasks between columns on the Board view
-- Or click **Edit** and change the status
+## AI Modes
 
-### Filtering Tasks
-
-- Use the **search bar** to find tasks by title or description
-- Use the **priority filter** in the sidebar to show specific priorities
-
-### Using the AI Assistant
-
-1. Click the **chat bubble** icon in the bottom-right corner
-2. Type naturally to create tasks:
-   - "Create a task to finish the presentation by tomorrow with high priority"
-   - "Add a medium priority task for code review"
-3. Use **Quick Actions**:
-   - **Plan my day** - Get a prioritized list of today's tasks
-   - **Insights** - View productivity analytics and tips
-4. Open the **Focus** view to use AI priorities, AI scheduling, Pomodoro, habits, team notes, summaries, and workload forecasting
-5. Confirm task creation when the AI parses your request
-
-### AI Modes
-
-The AI assistant works in two modes:
-
-- **With Gemini API Key**: Set the `GEMINI_API_KEY` environment variable for AI-powered natural language understanding. You can optionally set `GEMINI_MODEL`; the default is `gemini-2.0-flash`.
-- **Without API Key**: Uses intelligent rule-based parsing (works well for common task creation patterns)
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+- **With Gemini API Key**: Set `GEMINI_API_KEY` for AI-powered natural language understanding. You can optionally set `GEMINI_MODEL`; the default is `gemini-2.0-flash`.
+- **Without API Key**: Uses rule-based parsing for common task creation patterns.
 
 ## License
 
-This project is open source and available under the [MIT License](LICENSE).
-
----
-
-Built with React, FastAPI, Uvicorn, and Gemini
+This project is open source and available under the MIT License.

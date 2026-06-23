@@ -4,12 +4,15 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, selectinload
+
+load_dotenv()
 
 import auth as jwt_auth
 from agent import get_agent
