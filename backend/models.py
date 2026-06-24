@@ -22,6 +22,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     name = Column(String(120), nullable=False, default="")
+    email_reminders_enabled = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     tasks = relationship("Task", back_populates="user", cascade="all, delete-orphan")
@@ -80,6 +81,7 @@ class Task(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
+    last_reminded_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="tasks")
     workspace = relationship("Workspace", back_populates="tasks")

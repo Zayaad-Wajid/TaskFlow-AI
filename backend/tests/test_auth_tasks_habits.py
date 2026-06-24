@@ -16,7 +16,8 @@ def auth_headers(token):
 
 
 def test_user_registration_and_login(client):
-    register_user(client)
+    registered = register_user(client)
+    assert registered["user"]["email_reminders_enabled"] is True
 
     response = client.post(
         "/api/auth/login",
@@ -29,6 +30,19 @@ def test_user_registration_and_login(client):
     assert data["user"]["email"] == "tester@example.com"
     assert data["access_token"]
     assert data["refresh_token"]
+
+
+def test_user_can_disable_email_reminders(client):
+    user = register_user(client)
+
+    response = client.patch(
+        "/api/auth/settings",
+        json={"email_reminders_enabled": False},
+        headers=auth_headers(user["access_token"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["user"]["email_reminders_enabled"] is False
 
 
 def test_create_task_requires_authentication(client):

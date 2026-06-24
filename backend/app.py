@@ -21,6 +21,7 @@ import auth as jwt_auth
 from agent import get_agent
 from database import SessionLocal, get_db
 from models import Activity, AppSetting, Attachment, Comment, Habit, Task, TimeLog, User, Workspace, WorkspaceMember
+from reminders import start_reminder_scheduler, stop_reminder_scheduler
 
 
 app = FastAPI(title="TaskFlow-AI API")
@@ -99,6 +100,7 @@ class UserPayload(BaseModel):
     id: int
     email: str
     name: str
+    email_reminders_enabled: bool
     created_at: str
 
 
@@ -122,6 +124,10 @@ class AuthResponse(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str = ""
+
+
+class UserSettingsPayload(BaseModel):
+    email_reminders_enabled: bool
 
 
 class SuccessResponse(BaseModel):
@@ -341,6 +347,7 @@ def user_payload(user: User) -> dict[str, Any]:
         "id": user.id,
         "email": user.email,
         "name": user.name,
+        "email_reminders_enabled": user.email_reminders_enabled,
         "created_at": dt_to_str(user.created_at),
     }
 
@@ -613,6 +620,7 @@ def task_to_dict(task: Task, include_links: bool = True) -> dict[str, Any]:
         "created_at": dt_to_str(task.created_at),
         "updated_at": dt_to_str(task.updated_at),
         "completed_at": dt_to_str(task.completed_at, None),
+        "last_reminded_at": dt_to_str(task.last_reminded_at, None),
         "blocked_by": blockers,
         "blocking_task_ids": blocking,
         "is_blocked": bool(blockers),
@@ -892,6 +900,18 @@ def logout():
 
 @app.get("/api/auth/me", response_model=AuthResponse, responses={401: {"model": AuthResponse}})
 def me(user: User = Depends(get_current_user)):
+    return {"success": True, "user": user_payload(user)}
+
+
+@app.patch("/api/auth/settings", response_model=AuthResponse)
+def update_user_settings(
+    payload: UserSettingsPayload,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user.email_reminders_enabled = payload.email_reminders_enabled
+    db.commit()
+    db.refresh(user)
     return {"success": True, "user": user_payload(user)}
 
 
@@ -1426,6 +1446,12 @@ def startup_event() -> None:
             seed_database(db)
     except OperationalError:
         pass
+    start_reminder_scheduler()
+
+
+@app.on_event("shutdown")
+def shutdown_event() -> None:
+    stop_reminder_scheduler()
 
 
 if __name__ == "__main__":

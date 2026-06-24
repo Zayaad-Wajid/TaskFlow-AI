@@ -19,6 +19,7 @@ A modern, ClickUp-inspired task management application built with React, Tailwin
 - **Recurring Tasks** - Daily and weekly task series auto-clone from the next due date
 - **Task Dependencies** - Link blocker tasks and surface blocked indicators on cards
 - **Time Tracking** - Log manual or Pomodoro focus sessions per task
+- **Email Reminders** - Hourly due-date summaries with per-user opt-out controls
 
 ### AI Assistant
 
@@ -64,6 +65,7 @@ Workspace roles are intentionally simple:
 - **FastAPI + Uvicorn** - API backend with OpenAPI docs at `/docs`
 - **CORSMiddleware** - Cross-origin resource sharing
 - **SQLAlchemy + Alembic** - ORM models and database migrations
+- **APScheduler** - Hourly background email reminder jobs
 - **PostgreSQL** - Primary database, with local SQLite fallback
 - **Gemini** (optional) - Enhanced AI-powered task parsing and insights
 
@@ -76,6 +78,7 @@ TaskFlow/
 |   |-- agent.py                  # AI agent module
 |   |-- auth.py                   # JWT auth helpers and dependencies
 |   |-- database.py               # Database engine/session setup
+|   |-- reminders.py              # APScheduler and SMTP reminder service
 |   |-- models.py                 # SQLAlchemy ORM models
 |   |-- alembic/                  # Database migrations
 |   |-- scripts/                  # One-time data migration scripts
@@ -162,9 +165,17 @@ TaskFlow/
    JWT_ALGORITHM=HS256
    ACCESS_TOKEN_EXPIRE_MINUTES=15
    REFRESH_TOKEN_EXPIRE_DAYS=7
+   SMTP_HOST=smtp.example.com
+   SMTP_PORT=587
+   SMTP_USER=your_smtp_username
+   SMTP_PASSWORD=your_smtp_password
+   FROM_EMAIL=taskflow@example.com
+   SMTP_USE_TLS=true
    ```
 
    If PostgreSQL is not reachable, the app falls back to `backend/instance/taskflow_ai.db`.
+   If `SMTP_HOST` or `FROM_EMAIL` is empty, reminder delivery is skipped and
+   tasks remain eligible for a later attempt.
 
 5. **Create the PostgreSQL database**
 
@@ -276,6 +287,15 @@ retention.
 | POST   | `/api/auth/login`    | Login and get JWTs             |
 | POST   | `/api/auth/refresh`  | Refresh an expired access JWT  |
 | GET    | `/api/auth/me`       | Get the current user           |
+| PATCH  | `/api/auth/settings` | Update email reminder setting  |
+
+Update the authenticated user's reminder preference with:
+
+```json
+{
+  "email_reminders_enabled": false
+}
+```
 
 ### Workspaces
 
@@ -319,6 +339,19 @@ Task list responses use this shape:
   "page_size": 50
 }
 ```
+
+### Email Due-Date Reminders
+
+When the backend starts, APScheduler registers a single interval job that runs
+once per hour. It finds incomplete tasks due today or within the next 24 hours,
+groups them by owning user, and sends one plain-text SMTP summary per user.
+Email reminders are enabled by default and can be disabled per account through
+`PATCH /api/auth/settings`.
+
+After a summary is delivered successfully, each included task receives a
+`last_reminded_at` timestamp. The hourly job excludes tasks already reminded
+on the current day, preventing duplicate reminders while allowing another
+reminder on a later day if the task is still due and incomplete.
 
 ### Real-Time Task Updates
 
