@@ -1,4 +1,5 @@
-import { LogOut, Menu, Moon, Plus, Search, Sun, WifiOff } from "lucide-react";
+import { Download, LogOut, Menu, Moon, Plus, Search, Sun, WifiOff } from "lucide-react";
+import { useState } from "react";
 
 const Header = ({
   taskCount,
@@ -11,7 +12,10 @@ const Header = ({
   onToggleTheme,
   currentUser,
   onLogout,
+  onExport,
 }) => {
+  const [exportFormat, setExportFormat] = useState("csv");
+
   return (
     <header className="sticky top-0 z-40 flex min-h-[76px] flex-col gap-4 border-b border-slate-200/80 bg-white/85 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8 dark:border-slate-800 dark:bg-slate-950/90">
       <div className="flex w-full items-center justify-between">
@@ -81,6 +85,26 @@ const Header = ({
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pr-4 pl-11 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-cyan-400 focus:bg-white focus:ring-4 focus:ring-cyan-400/10 sm:w-80 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           />
+        </div>
+
+        <div className="flex shrink-0 items-center">
+          <select
+            value={exportFormat}
+            onChange={(event) => setExportFormat(event.target.value)}
+            aria-label="Export format"
+            className="h-10 rounded-l-lg border border-r-0 border-slate-300 bg-white px-2 text-sm text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+          >
+            <option value="csv">CSV</option>
+            <option value="json">JSON</option>
+          </select>
+          <button
+            onClick={() => onExport(exportFormat)}
+            title={`Export filtered tasks as ${exportFormat.toUpperCase()}`}
+            className="inline-flex h-10 items-center gap-2 rounded-r-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Export</span>
+          </button>
         </div>
 
         <button

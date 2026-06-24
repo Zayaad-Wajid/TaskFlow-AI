@@ -233,6 +233,7 @@ TaskFlow/
 | Method | Endpoint                      | Description                  |
 | ------ | ----------------------------- | ---------------------------- |
 | GET    | `/api/tasks`                  | Get paginated tasks          |
+| GET    | `/api/tasks/export`           | Export filtered tasks        |
 | POST   | `/api/tasks`                  | Create a new task            |
 | PUT    | `/api/tasks/:id`              | Update a task                |
 | DELETE | `/api/tasks/:id`              | Delete a task                |
@@ -328,6 +329,12 @@ sort_order=asc        # asc or desc
 page=1
 page_size=50
 ```
+
+`GET /api/tasks/export?format=csv` and
+`GET /api/tasks/export?format=json` download all matching tasks without
+pagination. The export endpoint accepts the same `workspace_id`, `search`,
+`priority`, `status`, `tags`, `sort_by`, and `sort_order` parameters as the
+task list.
 
 Task list responses use this shape:
 

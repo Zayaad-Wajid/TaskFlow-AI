@@ -137,6 +137,20 @@ export const api = {
     }
   },
 
+  exportTasks: async (format, filters = {}) => {
+    const config = taskQueryParams(filters);
+    return http.get(`${API_BASE}/tasks/export`, {
+      ...config,
+      params: {
+        ...config.params,
+        format,
+        page: undefined,
+        page_size: undefined,
+      },
+      responseType: "blob",
+    });
+  },
+
   getStats: async (workspaceId = null) => {
     try {
       const response = await http.get(`${API_BASE}/stats`, workspaceParams(workspaceId));

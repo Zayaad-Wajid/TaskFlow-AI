@@ -400,6 +400,35 @@ function AppContent() {
     setIsSidebarOpen(false);
   };
 
+  const handleExportTasks = async (format) => {
+    try {
+      const response = await api.exportTasks(format, {
+        workspaceId: activeWorkspaceId,
+        search: searchQuery,
+        priority: priorityFilter,
+        status: statusFilter,
+        tags: tagsFilter,
+        sortBy,
+        sortOrder,
+      });
+      const disposition = response.headers["content-disposition"] || "";
+      const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+      const filename = filenameMatch?.[1] || `taskflow-tasks.${format}`;
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showToast(`Tasks exported as ${format.toUpperCase()}`);
+    } catch (error) {
+      console.error("Error exporting tasks:", error);
+      showToast("Error exporting tasks", "error");
+    }
+  };
+
   const handleSelectWorkspace = (workspaceId) => {
     setActiveWorkspaceId(workspaceId);
     setIsLoading(true);
@@ -487,6 +516,7 @@ function AppContent() {
           theme={theme}
           currentUser={currentUser}
           onLogout={handleLogout}
+          onExport={handleExportTasks}
           onToggleTheme={() =>
             setTheme((currentTheme) =>
               currentTheme === "dark" ? "light" : "dark",

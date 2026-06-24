@@ -119,6 +119,44 @@ def test_tasks_support_backend_filtering_and_pagination(client):
     assert data["items"][0]["title"] == "Write API docs"
 
 
+def test_tasks_can_be_exported_with_current_filters(client):
+    user = register_user(client)
+    headers = auth_headers(user["access_token"])
+    client.post(
+        "/api/tasks",
+        json={"title": "Export me", "description": "Matching task", "priority": "High", "tags": ["report"]},
+        headers=headers,
+    )
+    client.post(
+        "/api/tasks",
+        json={"title": "Leave out", "priority": "Low"},
+        headers=headers,
+    )
+
+    csv_response = client.get(
+        "/api/tasks/export",
+        params={"format": "csv", "priority": "High", "tags": "report"},
+        headers=headers,
+    )
+
+    assert csv_response.status_code == 200
+    assert csv_response.headers["content-type"].startswith("text/csv")
+    assert "attachment; filename=" in csv_response.headers["content-disposition"]
+    assert "title,description,status,priority,due_date,tags,created_at" in csv_response.text
+    assert "Export me" in csv_response.text
+    assert "Leave out" not in csv_response.text
+
+    json_response = client.get(
+        "/api/tasks/export",
+        params={"format": "json", "search": "Export me"},
+        headers=headers,
+    )
+
+    assert json_response.status_code == 200
+    assert json_response.headers["content-type"].startswith("application/json")
+    assert [task["title"] for task in json_response.json()] == ["Export me"]
+
+
 def test_habit_create_and_toggle(client):
     user = register_user(client)
     headers = auth_headers(user["access_token"])

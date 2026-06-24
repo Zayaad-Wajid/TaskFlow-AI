@@ -1,4 +1,6 @@
 ﻿import json
+import csv
+import io
 import os
 import shutil
 import uuid
@@ -9,7 +11,7 @@ from typing import Any, Optional
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import asc, desc, func, or_
 from sqlalchemy.exc import OperationalError
@@ -1024,6 +1026,62 @@ def get_tasks(
         page=page,
         page_size=page_size,
     )
+
+
+@app.get(
+    "/api/tasks/export",
+    responses={
+        200: {
+            "content": {"text/csv": {}, "application/json": {}},
+            "description": "Download filtered tasks as CSV or JSON",
+        },
+        400: {"model": ErrorResponse},
+    },
+)
+def export_tasks(
+    format: str = Query("csv", pattern="^(csv|json)$"),
+    workspace_id: Optional[str] = None,
+    search: str = "",
+    priority: str = "",
+    status: str = "",
+    tags: str = "",
+    sort_by: str = "created_at",
+    sort_order: str = "asc",
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    query = filtered_task_query(
+        db=db,
+        user_id=user.id,
+        workspace_id=workspace_id,
+        search=search,
+        priority=priority,
+        status=status,
+        tags=tags,
+    )
+    tasks = apply_task_sort(query, sort_by, sort_order).all()
+    filename = f"taskflow-tasks-{now_dt().date().isoformat()}.{format}"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+
+    if format == "json":
+        content = json.dumps([task_to_dict(task) for task in tasks], indent=2)
+        return Response(content=content, media_type="application/json", headers=headers)
+
+    output = io.StringIO()
+    fieldnames = ["title", "description", "status", "priority", "due_date", "tags", "created_at"]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for task in tasks:
+        writer.writerow({
+            "title": task.title,
+            "description": task.description,
+            "status": task.status,
+            "priority": task.priority,
+            "due_date": date_to_str(task.due_date),
+            "tags": ", ".join(text_to_tags(task.tags)),
+            "created_at": dt_to_str(task.created_at),
+        })
+    return Response(content=output.getvalue(), media_type="text/csv", headers=headers)
 
 
 @app.post("/api/tasks", response_model=TaskResponse)
