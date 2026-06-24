@@ -229,7 +229,18 @@ TaskFlow/
 | POST   | `/api/tasks/:id/comments`     | Add a collaboration comment  |
 | PUT    | `/api/tasks/:id/dependencies` | Replace blocker dependencies |
 | POST   | `/api/tasks/:id/time-logs`    | Log focus time for a task    |
+| GET    | `/api/tasks/:id/attachments`  | List task attachments        |
+| POST   | `/api/tasks/:id/attachments`  | Upload a task attachment     |
+| GET    | `/api/tasks/:id/attachments/:attachment_id/download` | Download an attachment |
+| DELETE | `/api/tasks/:id/attachments/:attachment_id` | Delete an attachment |
 | GET    | `/api/stats`                  | Get task statistics          |
+
+Attachment uploads use `multipart/form-data` with a `file` field. Images, PDF,
+plain text, CSV, and common Microsoft Office formats are accepted up to 10 MB.
+Files are stored locally under `backend/uploads/<task-id>/`; attachment
+metadata is stored in the database. The `backend/uploads/` directory is
+gitignored and should be backed up separately in deployments that need file
+retention.
 
 ### AI Agent
 

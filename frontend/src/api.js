@@ -155,6 +155,20 @@ export const api = {
   updateTaskStatus: async (taskId, status) => (await http.patch(`${API_BASE}/tasks/${taskId}/status`, { status })).data,
   addTaskComment: async (taskId, comment) => (await http.post(`${API_BASE}/tasks/${taskId}/comments`, comment)).data,
   addTimeLog: async (taskId, log) => (await http.post(`${API_BASE}/tasks/${taskId}/time-logs`, log)).data,
+  getTaskAttachments: async (taskId) => (await http.get(`${API_BASE}/tasks/${taskId}/attachments`)).data,
+  uploadTaskAttachment: async (taskId, file) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return (await http.post(`${API_BASE}/tasks/${taskId}/attachments`, formData)).data;
+  },
+  downloadTaskAttachment: async (taskId, attachmentId) => (
+    await http.get(`${API_BASE}/tasks/${taskId}/attachments/${attachmentId}/download`, {
+      responseType: "blob",
+    })
+  ).data,
+  deleteTaskAttachment: async (taskId, attachmentId) => (
+    await http.delete(`${API_BASE}/tasks/${taskId}/attachments/${attachmentId}`)
+  ).data,
 
   agentChat: async (message) => (await http.post(`${API_BASE}/agent/chat`, { message })).data,
   parseTask: async (text) => (await http.post(`${API_BASE}/agent/parse-task`, { text })).data,

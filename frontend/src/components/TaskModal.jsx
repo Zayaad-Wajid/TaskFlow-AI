@@ -1,5 +1,7 @@
-import { X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Download, FileText, Paperclip, Trash2, Upload, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+
+import { api } from "../api";
 
 const fieldClass =
   "w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 transition placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-4 focus:ring-cyan-400/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100";
@@ -21,11 +23,15 @@ const emptyForm = (defaultStatus = "To Do") => ({
 
 const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
   const [formData, setFormData] = useState(emptyForm(defaultStatus));
+  const [attachments, setAttachments] = useState([]);
+  const [attachmentPreviews, setAttachmentPreviews] = useState({});
+  const [attachmentError, setAttachmentError] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (task) {
       // Keep the editable form synchronized when a different task is opened.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         title: task.title || "",
         description: task.description || "",
@@ -45,6 +51,106 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
       setFormData(emptyForm(defaultStatus || "To Do"));
     }
   }, [task, defaultStatus, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !task?.id) {
+      setAttachments([]);
+      return;
+    }
+
+    let active = true;
+    api.getTaskAttachments(task.id)
+      .then((data) => {
+        if (active) setAttachments(data.attachments || []);
+      })
+      .catch(() => {
+        if (active) setAttachmentError("Could not load attachments.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [isOpen, task?.id]);
+
+  useEffect(() => {
+    let active = true;
+    const urls = [];
+    const loadPreviews = async () => {
+      const imageAttachments = attachments.filter((item) =>
+        item.content_type?.startsWith("image/"));
+      const previews = {};
+      await Promise.all(imageAttachments.map(async (attachment) => {
+        try {
+          const blob = await api.downloadTaskAttachment(task.id, attachment.id);
+          const url = URL.createObjectURL(blob);
+          urls.push(url);
+          previews[attachment.id] = url;
+        } catch {
+          // The file remains downloadable even if its inline preview fails.
+        }
+      }));
+      if (active) {
+        setAttachmentPreviews(previews);
+      } else {
+        urls.forEach((url) => URL.revokeObjectURL(url));
+      }
+    };
+
+    if (task?.id && attachments.length) {
+      loadPreviews();
+    } else {
+      setAttachmentPreviews({});
+    }
+    return () => {
+      active = false;
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [attachments, task?.id]);
+
+  const handleAttachmentUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !task?.id) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setAttachmentError("Files must be 10 MB or smaller.");
+      return;
+    }
+
+    setAttachmentError("");
+    setIsUploading(true);
+    try {
+      const data = await api.uploadTaskAttachment(task.id, file);
+      setAttachments(data.task?.attachments || [...attachments, data.attachment]);
+    } catch (error) {
+      setAttachmentError(error.response?.data?.error || "Could not upload this file.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleAttachmentDownload = async (attachment) => {
+    setAttachmentError("");
+    try {
+      const blob = await api.downloadTaskAttachment(task.id, attachment.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = attachment.filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setAttachmentError("Could not download this file.");
+    }
+  };
+
+  const handleAttachmentDelete = async (attachment) => {
+    setAttachmentError("");
+    try {
+      const data = await api.deleteTaskAttachment(task.id, attachment.id);
+      setAttachments(data.task?.attachments || attachments.filter((item) => item.id !== attachment.id));
+    } catch {
+      setAttachmentError("Could not remove this attachment.");
+    }
+  };
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -291,6 +397,97 @@ const TaskModal = ({ isOpen, onClose, onSave, task, defaultStatus }) => {
               placeholder="design, urgent, review"
               className={fieldClass}
             />
+          </div>
+
+          <div className="border-t border-slate-200 pt-5 dark:border-slate-800">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Paperclip className="h-4 w-4 text-slate-500" />
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  Attachments
+                </h3>
+              </div>
+              {task?.id && (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
+                    onChange={handleAttachmentUpload}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    <Upload className="h-4 w-4" />
+                    {isUploading ? "Uploading..." : "Upload"}
+                  </button>
+                </>
+              )}
+            </div>
+
+            {!task?.id ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Save the task before adding attachments.
+              </p>
+            ) : attachments.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                No attachments yet.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {attachments.map((attachment) => (
+                  <div
+                    key={attachment.id}
+                    className="flex min-w-0 items-center gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800"
+                  >
+                    {attachmentPreviews[attachment.id] ? (
+                      <img
+                        src={attachmentPreviews[attachment.id]}
+                        alt=""
+                        className="h-12 w-12 shrink-0 rounded object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-slate-100 dark:bg-slate-800">
+                        <FileText className="h-5 w-5 text-slate-500" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
+                        {attachment.filename}
+                      </p>
+                      <p className="truncate text-xs text-slate-500">
+                        {attachment.content_type}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      title={`Download ${attachment.filename}`}
+                      onClick={() => handleAttachmentDownload(attachment)}
+                      className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
+                    >
+                      <Download className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      title={`Delete ${attachment.filename}`}
+                      onClick={() => handleAttachmentDelete(attachment)}
+                      className="rounded-lg p-2 text-slate-500 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {attachmentError && (
+              <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+                {attachmentError}
+              </p>
+            )}
           </div>
 
           <div className="flex justify-end gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">

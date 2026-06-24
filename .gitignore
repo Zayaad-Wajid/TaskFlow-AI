@@ -6,4 +6,5 @@ __pycache__/
 .pytest_cache/
 *.py[cod]
 frontend/dist/
+backend/uploads/
 node_modules/

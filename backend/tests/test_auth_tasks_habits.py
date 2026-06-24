@@ -130,3 +130,39 @@ def test_habit_create_and_toggle(client):
     data = toggled.json()["habit"]
     assert data["completed_dates"] == ["2026-06-23"]
     assert data["streak"] >= 0
+
+
+def test_task_attachment_upload_list_download_and_delete(client):
+    user = register_user(client)
+    headers = auth_headers(user["access_token"])
+    task = client.post(
+        "/api/tasks",
+        json={"title": "Task with a file"},
+        headers=headers,
+    ).json()["task"]
+
+    uploaded = client.post(
+        f"/api/tasks/{task['id']}/attachments",
+        files={"file": ("notes.txt", b"attachment contents", "text/plain")},
+        headers=headers,
+    )
+
+    assert uploaded.status_code == 200
+    attachment = uploaded.json()["attachment"]
+    assert attachment["filename"] == "notes.txt"
+    assert uploaded.json()["task"]["attachments"][0]["id"] == attachment["id"]
+
+    listed = client.get(f"/api/tasks/{task['id']}/attachments", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json()["attachments"][0]["filename"] == "notes.txt"
+
+    downloaded = client.get(attachment["download_url"], headers=headers)
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"attachment contents"
+
+    deleted = client.delete(
+        f"/api/tasks/{task['id']}/attachments/{attachment['id']}",
+        headers=headers,
+    )
+    assert deleted.status_code == 200
+    assert deleted.json()["task"]["attachments"] == []

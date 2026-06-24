@@ -86,6 +86,12 @@ class Task(Base):
     recurrence_parent = relationship("Task", remote_side=[id], backref="recurrence_children")
     comments = relationship("Comment", back_populates="task", cascade="all, delete-orphan", order_by="Comment.created_at")
     time_logs = relationship("TimeLog", back_populates="task", cascade="all, delete-orphan", order_by="TimeLog.created_at")
+    attachments = relationship(
+        "Attachment",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="Attachment.uploaded_at",
+    )
     dependencies = relationship(
         "Task",
         secondary=task_dependencies,
@@ -134,6 +140,19 @@ class TimeLog(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     task = relationship("Task", back_populates="time_logs")
+
+
+class Attachment(Base):
+    __tablename__ = "attachments"
+
+    id = Column(String(36), primary_key=True)
+    task_id = Column(String(36), ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    filename = Column(String(255), nullable=False)
+    content_type = Column(String(160), nullable=False)
+    file_path = Column(Text, nullable=False)
+    uploaded_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    task = relationship("Task", back_populates="attachments")
 
 
 class Activity(Base):

@@ -1,13 +1,15 @@
 ﻿import json
 import os
+import shutil
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Optional
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import asc, desc, func, or_
 from sqlalchemy.exc import OperationalError
@@ -18,7 +20,7 @@ load_dotenv()
 import auth as jwt_auth
 from agent import get_agent
 from database import SessionLocal, get_db
-from models import Activity, AppSetting, Comment, Habit, Task, TimeLog, User, Workspace, WorkspaceMember
+from models import Activity, AppSetting, Attachment, Comment, Habit, Task, TimeLog, User, Workspace, WorkspaceMember
 
 
 app = FastAPI(title="TaskFlow-AI API")
@@ -37,6 +39,28 @@ agent = get_agent(os.getenv("GEMINI_API_KEY"))
 
 DEFAULT_LISTS = ["To Do", "In Progress", "Done"]
 DEFAULT_CAPACITY_MINUTES = 6 * 60
+BASE_DIR = Path(__file__).resolve().parent
+UPLOAD_DIR = BASE_DIR / "uploads"
+MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024
+ALLOWED_ATTACHMENT_TYPES = {
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/csv",
+    "text/plain",
+}
+ALLOWED_ATTACHMENT_EXTENSIONS = {
+    ".csv", ".doc", ".docx", ".gif", ".jpeg", ".jpg", ".pdf", ".png",
+    ".ppt", ".pptx", ".txt", ".webp", ".xls", ".xlsx",
+}
 
 
 class TaskConnectionManager:
@@ -175,6 +199,16 @@ class TimeLogResponse(BaseModel):
     success: bool
     log: dict[str, Any]
     task: dict[str, Any]
+
+
+class AttachmentResponse(BaseModel):
+    success: bool
+    attachment: dict[str, Any]
+    task: dict[str, Any]
+
+
+class AttachmentsResponse(BaseModel):
+    attachments: list[dict[str, Any]]
 
 
 class ActivityResponse(BaseModel):
@@ -433,6 +467,7 @@ def task_query(db: Session, user_id: int, workspace_id: Optional[str] = None):
     return query.options(
         selectinload(Task.comments),
         selectinload(Task.time_logs),
+        selectinload(Task.attachments),
         selectinload(Task.dependencies),
         selectinload(Task.blocking_tasks),
     )
@@ -484,6 +519,7 @@ def get_task_or_404(db: Session, task_id: str, user_id: int) -> Task:
     task = db.query(Task).options(
         selectinload(Task.comments),
         selectinload(Task.time_logs),
+        selectinload(Task.attachments),
         selectinload(Task.dependencies),
         selectinload(Task.blocking_tasks),
     ).filter(Task.id == task_id).first()
@@ -517,6 +553,35 @@ def time_log_to_dict(log: TimeLog) -> dict[str, Any]:
     }
 
 
+def attachment_to_dict(attachment: Attachment) -> dict[str, Any]:
+    return {
+        "id": attachment.id,
+        "task_id": attachment.task_id,
+        "filename": attachment.filename,
+        "content_type": attachment.content_type,
+        "uploaded_at": dt_to_str(attachment.uploaded_at),
+        "download_url": f"/api/tasks/{attachment.task_id}/attachments/{attachment.id}/download",
+    }
+
+
+def attachment_path(attachment: Attachment) -> Path:
+    path = (BASE_DIR / attachment.file_path).resolve()
+    upload_root = UPLOAD_DIR.resolve()
+    if path != upload_root and upload_root not in path.parents:
+        raise HTTPException(status_code=404, detail={"success": False, "error": "Attachment file not found"})
+    return path
+
+
+def get_attachment_or_404(db: Session, task_id: str, attachment_id: str) -> Attachment:
+    attachment = db.query(Attachment).filter(
+        Attachment.id == attachment_id,
+        Attachment.task_id == task_id,
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail={"success": False, "error": "Attachment not found"})
+    return attachment
+
+
 def task_to_dict(task: Task, include_links: bool = True) -> dict[str, Any]:
     blockers = [task_to_dict(item, include_links=False) for item in task.dependencies if item.status != "Done"] if include_links else []
     blocking = [item.id for item in task.blocking_tasks if item.status != "Done"] if include_links else []
@@ -542,6 +607,7 @@ def task_to_dict(task: Task, include_links: bool = True) -> dict[str, Any]:
             "next_due_date": date_to_str(task.recurring_next_due_date),
         },
         "time_logs": [time_log_to_dict(log) for log in task.time_logs],
+        "attachments": [attachment_to_dict(attachment) for attachment in task.attachments],
         "focus_minutes": task.focus_minutes,
         "recurrence_parent_id": task.recurrence_parent_id or "",
         "created_at": dt_to_str(task.created_at),
@@ -971,6 +1037,7 @@ def delete_task(task_id: str, background_tasks: BackgroundTasks, user: User = De
     record_activity(db, user.id, "task_deleted", task, "Task deleted")
     db.delete(task)
     db.commit()
+    shutil.rmtree(UPLOAD_DIR / task_id, ignore_errors=True)
     background_tasks.add_task(broadcast_task_event_to_users, task_audience_user_ids(db, task_data, user.id), "task_deleted", task_data, task_id)
     return {"success": True}
 
@@ -1047,6 +1114,135 @@ def add_time_log(task_id: str, payload: TimeLogPayload, background_tasks: Backgr
     task_data = task_to_dict(get_task_or_404(db, task_id, user.id))
     background_tasks.add_task(broadcast_task_event_to_users, task_audience_user_ids(db, task_data, user.id), "task_updated", task_data)
     return {"success": True, "log": time_log_to_dict(log), "task": task_data}
+
+
+@app.get("/api/tasks/{task_id}/attachments", response_model=AttachmentsResponse, responses={404: {"model": ErrorResponse}})
+def get_task_attachments(task_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    task = get_task_or_404(db, task_id, user.id)
+    return {"attachments": [attachment_to_dict(attachment) for attachment in task.attachments]}
+
+
+@app.post(
+    "/api/tasks/{task_id}/attachments",
+    response_model=AttachmentResponse,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 413: {"model": ErrorResponse}},
+)
+async def upload_task_attachment(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    task = get_task_or_404(db, task_id, user.id)
+    original_filename = Path(file.filename or "").name
+    extension = Path(original_filename).suffix.lower()
+    content_type = (file.content_type or "application/octet-stream").lower()
+    if not original_filename:
+        raise HTTPException(status_code=400, detail={"success": False, "error": "A filename is required"})
+    if content_type not in ALLOWED_ATTACHMENT_TYPES or extension not in ALLOWED_ATTACHMENT_EXTENSIONS:
+        raise HTTPException(status_code=400, detail={"success": False, "error": "File type is not allowed"})
+
+    attachment_id = str(uuid.uuid4())
+    task_upload_dir = UPLOAD_DIR / task_id
+    task_upload_dir.mkdir(parents=True, exist_ok=True)
+    stored_path = task_upload_dir / f"{attachment_id}{extension}"
+    bytes_written = 0
+    try:
+        with stored_path.open("wb") as output:
+            while chunk := await file.read(1024 * 1024):
+                bytes_written += len(chunk)
+                if bytes_written > MAX_ATTACHMENT_SIZE:
+                    raise HTTPException(
+                        status_code=413,
+                        detail={"success": False, "error": "Attachment exceeds the 10 MB limit"},
+                    )
+                output.write(chunk)
+    except Exception:
+        stored_path.unlink(missing_ok=True)
+        raise
+    finally:
+        await file.close()
+
+    attachment = Attachment(
+        id=attachment_id,
+        task_id=task.id,
+        filename=original_filename,
+        content_type=content_type,
+        file_path=stored_path.relative_to(BASE_DIR).as_posix(),
+        uploaded_at=now_dt(),
+    )
+    db.add(attachment)
+    task.updated_at = now_dt()
+    record_activity(db, user.id, "attachment_added", task, f"Attached {original_filename}")
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        stored_path.unlink(missing_ok=True)
+        raise
+    db.refresh(attachment)
+    task_data = task_to_dict(get_task_or_404(db, task_id, user.id))
+    background_tasks.add_task(
+        broadcast_task_event_to_users,
+        task_audience_user_ids(db, task_data, user.id),
+        "task_updated",
+        task_data,
+    )
+    return {"success": True, "attachment": attachment_to_dict(attachment), "task": task_data}
+
+
+@app.get(
+    "/api/tasks/{task_id}/attachments/{attachment_id}/download",
+    responses={404: {"model": ErrorResponse}},
+)
+def download_task_attachment(
+    task_id: str,
+    attachment_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    get_task_or_404(db, task_id, user.id)
+    attachment = get_attachment_or_404(db, task_id, attachment_id)
+    path = attachment_path(attachment)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail={"success": False, "error": "Attachment file not found"})
+    return FileResponse(path, media_type=attachment.content_type, filename=attachment.filename)
+
+
+@app.delete(
+    "/api/tasks/{task_id}/attachments/{attachment_id}",
+    response_model=TaskResponse,
+    responses={404: {"model": ErrorResponse}},
+)
+def delete_task_attachment(
+    task_id: str,
+    attachment_id: str,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    task = get_task_or_404(db, task_id, user.id)
+    attachment = get_attachment_or_404(db, task_id, attachment_id)
+    path = attachment_path(attachment)
+    filename = attachment.filename
+    db.delete(attachment)
+    task.updated_at = now_dt()
+    record_activity(db, user.id, "attachment_deleted", task, f"Removed {filename}")
+    db.commit()
+    path.unlink(missing_ok=True)
+    try:
+        path.parent.rmdir()
+    except OSError:
+        pass
+    task_data = task_to_dict(get_task_or_404(db, task_id, user.id))
+    background_tasks.add_task(
+        broadcast_task_event_to_users,
+        task_audience_user_ids(db, task_data, user.id),
+        "task_updated",
+        task_data,
+    )
+    return {"success": True, "task": task_data}
 
 
 @app.get("/api/activity", response_model=ActivityResponse)
