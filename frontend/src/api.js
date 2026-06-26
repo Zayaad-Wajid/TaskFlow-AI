@@ -207,7 +207,9 @@ export const api = {
   deleteHabit: async (habitId) => (await http.delete(`${API_BASE}/habits/${habitId}`)).data,
 
   login: async (email, password) => applyAuthResponse(await http.post(`${API_BASE}/auth/login`, { email, password })),
-  register: async (name, email, password) => applyAuthResponse(await http.post(`${API_BASE}/auth/register`, { name, email, password })),
+  register: async (name, email, password) => (
+    await http.post(`${API_BASE}/auth/register`, { name, email, password })
+  ).data,
   refresh: async () => applyAuthResponse(await http.post(`${API_BASE}/auth/refresh`, { refresh_token: tokenStore.getRefreshToken() })),
   logout: async () => {
     tokenStore.clear();

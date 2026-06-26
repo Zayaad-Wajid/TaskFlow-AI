@@ -12,18 +12,27 @@ const AuthView = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const switchMode = (nextMode) => {
+    setMode(nextMode);
+    setError("");
+    setSuccessMessage("");
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+    setSuccessMessage("");
     setIsSubmitting(true);
 
     try {
+      const trimmedEmail = email.trim();
       const response =
         mode === "login"
-          ? await login(email.trim(), password)
-          : await register(name.trim(), email.trim(), password);
+          ? await login(trimmedEmail, password)
+          : await register(name.trim(), trimmedEmail, password);
 
       if (!response?.success || !response?.user) {
         setError(response?.error || "Authentication failed.");
@@ -31,8 +40,16 @@ const AuthView = () => {
       }
 
       setName("");
-      setEmail("");
       setPassword("");
+
+      if (mode === "register") {
+        setEmail(trimmedEmail);
+        setMode("login");
+        setSuccessMessage("Account created. Please log in to continue.");
+        return;
+      }
+
+      setEmail("");
     } catch (requestError) {
       setError(requestError?.response?.data?.error || "Unable to continue. Please try again.");
     } finally {
@@ -60,7 +77,7 @@ const AuthView = () => {
 
         <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/70">
           <button
-            onClick={() => setMode("login")}
+            onClick={() => switchMode("login")}
             className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
               mode === "login"
                 ? "bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white"
@@ -71,7 +88,7 @@ const AuthView = () => {
             Login
           </button>
           <button
-            onClick={() => setMode("register")}
+            onClick={() => switchMode("register")}
             className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
               mode === "register"
                 ? "bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white"
@@ -125,6 +142,12 @@ const AuthView = () => {
           {error && (
             <p className="rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-600 dark:text-red-300">
               {error}
+            </p>
+          )}
+
+          {successMessage && (
+            <p className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+              {successMessage}
             </p>
           )}
 
